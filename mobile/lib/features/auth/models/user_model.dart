@@ -32,6 +32,17 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    print('🔍 UserModel.fromJson - datos recibidos: $json');
+    
+    // CORREGIR: Extraer datos del objeto "user" anidado
+    Map<String, dynamic> userData = {};
+    if (json.containsKey('user') && json['user'] != null) {
+      userData = json['user'];
+    } else {
+      // Si no hay objeto "user", usar directamente el json
+      userData = json;
+    }
+    
     // Extraer datos del empleado si están presentes
     String? empleadoId;
     String? microId;
@@ -40,33 +51,49 @@ class UserModel {
     
     if (json.containsKey('empleado') && json['empleado'] != null) {
       final empleadoData = json['empleado'];
+      print('🔍 Datos del empleado encontrados: $empleadoData');
+      
       empleadoId = empleadoData['id'];
-      microId = empleadoData['id_micro'];
       entidadId = empleadoData['id_entidad'];
       
-      // Extraer placa del micro si está en la lista de micros
+      // Extraer microId y placa del primer micro en el array
       if (empleadoData.containsKey('micros') && 
           empleadoData['micros'] != null && 
           empleadoData['micros'] is List && 
           empleadoData['micros'].isNotEmpty) {
-        placaMicro = empleadoData['micros'][0]['placa'];
+        final primerMicro = empleadoData['micros'][0];
+        microId = primerMicro['id'];
+        placaMicro = primerMicro['placa'];
+        print('🚌 Micro encontrado: ID=$microId, Placa=$placaMicro');
       }
     }
     
-    return UserModel(
-      id: json['id'] ?? '',
-      email: json['correo'] ?? '', // El backend usa 'correo', no 'email'
-      nombre: json['nombre'] ?? '',
-      tipo: json['tipo'] ?? 'CLIENTE',
-      activo: json['activo'] ?? true,
+    // Determinar el tipo correcto basado en si tiene empleado
+    String tipoFinal = userData['tipo'] ?? 'CLIENTE';
+    if (json.containsKey('empleado') && json['empleado'] != null) {
+      final empleadoTipo = json['empleado']['tipo'];
+      if (empleadoTipo == 'CHOFER') {
+        tipoFinal = 'EMPLEADO'; // Mantener EMPLEADO para identificar como micrero
+      }
+    }
+    
+    final usuario = UserModel(
+      id: userData['id'] ?? '',
+      email: userData['correo'] ?? '', // El backend usa 'correo', no 'email'
+      nombre: userData['nombre'] ?? '',
+      tipo: tipoFinal,
+      activo: userData['estado'] ?? true, // El backend usa 'estado', no 'activo'
       empleadoId: empleadoId,
       microId: microId,
       placaMicro: placaMicro,
       entidadId: entidadId,
       rutaAsignada: json['ruta_asignada'],
-      telefono: json['telefono'],
-      direccion: json['direccion'],
+      telefono: userData['telefono'],
+      direccion: userData['direccion'],
     );
+    
+    print('✅ UserModel creado: $usuario');
+    return usuario;
   }
 
   Map<String, dynamic> toJson() {

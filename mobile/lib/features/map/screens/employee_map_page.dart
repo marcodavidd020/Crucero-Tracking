@@ -107,49 +107,87 @@ class _EmployeeMapPageState extends ConsumerState<EmployeeMapPage> {
     final user = ref.read(userProvider);
     if (user?.esMicrero == true) {
       try {
-        print('🌐 Obteniendo ruta desde API para empleado...');
+        print('🌐 Verificando ruta seleccionada desde dashboard...');
         
-        // Obtener el empleado desde la base de usuarios
-        final empleadoResponse = await ApiService(baseUrl: baseUrl).get('auth/empleado/${user?.empleadoId}/ruta');
+        // NUEVO: Verificar si hay una ruta específica seleccionada desde el dashboard
+        final prefs = await SharedPreferences.getInstance();
+        final rutaActivaId = prefs.getString('ruta_activa_id');
+        final rutaActivaNombre = prefs.getString('ruta_activa_nombre');
         
-        if (empleadoResponse['ruta'] != null) {
-          final rutaData = empleadoResponse['ruta'];
+        if (rutaActivaId != null && rutaActivaNombre != null) {
+          print('🎯 Ruta específica seleccionada: $rutaActivaNombre (ID: $rutaActivaId)');
           
-          // Crear un objeto ruta temporal
-          final ruta = {
-            'nombre': rutaData['nombre'],
-            'vertices': rutaData['vertices'],
-            'origenLat': rutaData['origen_lat'],
-            'origenLong': rutaData['origen_long'],
-            'destinoLat': rutaData['destino_lat'],
-            'destinoLong': rutaData['destino_long'],
-          };
-          
-          print('🚌 Cargando ruta desde API: ${ruta['nombre']}');
-          print('🗺️ Vertices desde API: ${ruta['vertices']}');
-          await _drawRouteOnMap(ruta);
-        } else {
-          print('❌ No se encontró ruta para el empleado');
-          // Fallback al provider local
-          final ruta = ref.read(rutaByNombreProvider(user!.rutaAsignada!));
-          if (ruta != null) {
-            print('🚌 Fallback - Cargando ruta local: ${ruta.value?.nombre}');
-            await _drawRouteOnMap(ruta);
+          // Obtener todas las rutas de la entidad y buscar la específica
+          if (user?.entidadId != null) {
+            final rutasResponse = await ApiService(baseUrl: baseUrl).get('ruta/${user?.entidadId}');
+            
+            if (rutasResponse['data'] != null && rutasResponse['data']['rutas'] != null) {
+              final List<dynamic> rutasData = rutasResponse['data']['rutas'];
+              
+              // Buscar la ruta específica por ID
+              final rutaEspecifica = rutasData.firstWhere(
+                (ruta) => ruta['id'] == rutaActivaId,
+                orElse: () => null,
+              );
+              
+              if (rutaEspecifica != null) {
+                print('✅ Ruta específica encontrada: ${rutaEspecifica['nombre']}');
+                await _drawRouteOnMap(rutaEspecifica);
+                
+                // Actualizar el usuario con la ruta específica
+                final usuarioConRuta = user!.copyWith(rutaAsignada: rutaEspecifica['nombre']);
+                ref.read(userProvider.notifier).state = usuarioConRuta;
+                
+                return; // Salir temprano, ya tenemos la ruta específica
+              }
+            }
           }
         }
-      } catch (e) {
-        print('❌ Error obteniendo ruta desde API: $e');
         
-        // Fallback al provider local
-        if (user?.rutaAsignada != null) {
-          final ruta = ref.read(rutaByNombreProvider(user!.rutaAsignada!));
-          if (ruta != null) {
-            print('🚌 Fallback - Cargando ruta local: ${ruta.value?.nombre}');
-            await _drawRouteOnMap(ruta);
+        // FALLBACK: Si no hay ruta específica, usar la lógica original
+        print('🌐 Obteniendo rutas de la entidad del micrero...');
+        
+        if (user?.entidadId != null) {
+          print('🏢 ID de entidad del micrero: ${user?.entidadId}');
+          
+          // Obtener rutas de la entidad
+          final rutasResponse = await ApiService(baseUrl: baseUrl).get('ruta/${user?.entidadId}');
+          
+          if (rutasResponse['data'] != null && rutasResponse['data']['rutas'] != null) {
+            final List<dynamic> rutasData = rutasResponse['data']['rutas'];
+            
+            if (rutasData.isNotEmpty) {
+              print('🛣️ Se encontraron ${rutasData.length} rutas para la entidad');
+              
+              // Seleccionar la primera ruta automáticamente como fallback
+              final rutaSeleccionada = rutasData.first;
+              
+              print('🚌 Cargando ruta fallback: ${rutaSeleccionada['nombre']}');
+              await _drawRouteOnMap(rutaSeleccionada);
+              
+              // Guardar la ruta seleccionada en el provider
+              final usuarioConRuta = user!.copyWith(
+                rutaAsignada: rutaSeleccionada['nombre']
+              );
+              ref.read(userProvider.notifier).state = usuarioConRuta;
+              
+            } else {
+              print('❌ No se encontraron rutas para la entidad');
+              _showError('No hay rutas disponibles para tu entidad');
+            }
           } else {
-            print('❌ No se encontró la ruta: ${user.rutaAsignada}');
+            print('❌ No se encontraron rutas en la respuesta');
+            _showError('No se pudieron cargar las rutas de la entidad');
           }
+          
+        } else {
+          print('❌ No se encontró ID de entidad del micrero');
+          _showError('No se pudo identificar la entidad del micrero');
         }
+        
+      } catch (e) {
+        print('❌ Error obteniendo rutas de la entidad: $e');
+        _showError('Error al cargar las rutas: $e');
       }
     }
   }
@@ -310,7 +348,7 @@ class _EmployeeMapPageState extends ConsumerState<EmployeeMapPage> {
       // Inicializar el servicio de tracking con sockets
       if (_trackingService != null) {
         await _trackingService!.initSocket(
-          'http://192.168.0.202:3001', // URL directa para socket
+          baseUrlSocket, // URL desde constantes
           user?.microId ?? 'MCR001', // Usar el microId del usuario
           'jwt-token-placeholder', // TODO: Usar token real
           enableLocationTracking: true, // EMPLEADO: SÍ envía ubicación

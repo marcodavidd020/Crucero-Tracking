@@ -215,6 +215,38 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
               ),
 
+              // Botón de login rápido para chofer
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                child: ElevatedButton.icon(
+                  onPressed: isLoading ? null : () {
+                    // Llenar campos automáticamente
+                    _emailController.text = 'marco.chofer@gmail.com';
+                    _passwordController.text = '12345678';
+                    // Ejecutar login automáticamente
+                    Future.delayed(const Duration(milliseconds: 100), () {
+                      _handleLogin();
+                    });
+                  },
+                  icon: const Icon(Icons.flash_on, color: Colors.white),
+                  label: const Text(
+                    '⚡ Login Rápido Chofer',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+
               // Botón de inicio de sesión
               ElevatedButton(
                 onPressed: isLoading ? null : _handleLogin,

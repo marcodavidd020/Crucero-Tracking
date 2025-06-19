@@ -39,39 +39,50 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       final response = await _apiService.post('auth/sign-in', data);
       print("📱 API Response del servidor: $response");
       
-      if (response != null && response['success'] == true && response['data'] != null) {
+      // ARREGLO: Validar tanto formato success como statusCode
+      bool isSuccessful = false;
+      
+      if (response != null && response['data'] != null) {
+        // Formato con success: true
+        if (response['success'] == true) {
+          isSuccessful = true;
+        }
+        // Formato con statusCode 200-299
+        else if (response.containsKey('statusCode')) {
+          final statusCode = response['statusCode'];
+          if (statusCode >= 200 && statusCode < 300) {
+            isSuccessful = true;
+          }
+        }
+      }
+      
+      if (isSuccessful) {
         final responseData = response['data'];
         
-        // Usar directamente el modelo UserModel.fromJson actualizado
+        // CORREGIR: Pasar todos los datos del response al UserModel
         final usuario = UserModel.fromJson(responseData);
         
-        // Si es empleado, obtener la ruta asignada
-        if (usuario.esMicrero && usuario.empleadoId != null) {
+        // Guardar información de la entidad en localStorage para uso posterior
+        if (usuario.esMicrero && usuario.entidadId != null) {
           try {
-            final rutaResponse = await _apiService.get('auth/empleado/${usuario.empleadoId}/ruta');
-            if (rutaResponse['ruta'] != null) {
-              // Crear una copia del usuario con la ruta asignada
-              final usuarioConRuta = usuario.copyWith(
-                rutaAsignada: rutaResponse['ruta']['nombre']
-              );
-              _ref.read(userProvider.notifier).state = usuarioConRuta;
-            } else {
-              _ref.read(userProvider.notifier).state = usuario;
-            }
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('entidad_id', usuario.entidadId!);
+            print('💾 Entidad ID guardada en localStorage: ${usuario.entidadId}');
           } catch (e) {
-            print('⚠️ Error obteniendo ruta del empleado: $e');
-            _ref.read(userProvider.notifier).state = usuario;
+            print('⚠️ Error guardando entidad ID: $e');
           }
-        } else {
-          _ref.read(userProvider.notifier).state = usuario;
         }
+        
+        // Guardar el usuario autenticado
+        _ref.read(userProvider.notifier).state = usuario;
         
         print("✅ Usuario autenticado: ${usuario.nombre}, ${usuario.email}, ${usuario.tipo}");
         state = AuthState.authenticated;
       } else {
-        print("❌ Error: Login falló - ${response?['message'] ?? 'Unknown error'}");
+        final message = response?['message'] ?? 'Unknown error';
+        print("❌ Error: Login falló - $message");
         state = AuthState.error;
-        throw Exception('Login failed: ${response?['message'] ?? 'Invalid credentials'}');
+        throw Exception('Login failed: $message');
       }
     } catch (e) {
       print("❌ Error en login: $e");

@@ -98,7 +98,8 @@ class _ClientMapState extends ConsumerState<ClientMap> {
       _trackingService = TrackingSocketService();
 
       await _trackingService!.initSocket(
-        'http://192.168.0.202:3001', // URL directa para socket
+        // 'http://192.168.0.202:3001', // URL directa para socket
+        baseUrlSocket,
         'client-${DateTime.now().millisecondsSinceEpoch}', // ID único para cliente
         'jwt-token-placeholder', // TODO: Usar token real
         enableLocationTracking: false, // CLIENTE: NO envía ubicación, solo escucha
