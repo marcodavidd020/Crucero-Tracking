@@ -1,0 +1,2 @@
+/mnt/Local/Todo/Matoneadas/Crucero Tracking/mobile/android/app/.cxx/Debug/19w3y4i1/armeabi-v7a/CMakeFiles/rebuild_cache.dir
+/mnt/Local/Todo/Matoneadas/Crucero Tracking/mobile/android/app/.cxx/Debug/19w3y4i1/armeabi-v7a/CMakeFiles/edit_cache.dir

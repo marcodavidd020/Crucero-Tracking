@@ -1,0 +1,2 @@
+C:/Users/PC/Desktop/UAGRM/Sw1/Proyecto-2025/App-Map-Tracking-Develop-Map/android/app/.cxx/Debug/3n192w4r/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/PC/Desktop/UAGRM/Sw1/Proyecto-2025/App-Map-Tracking-Develop-Map/android/app/.cxx/Debug/3n192w4r/armeabi-v7a/CMakeFiles/rebuild_cache.dir

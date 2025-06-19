@@ -1,0 +1,871 @@
+{
+	"info": {
+		"_postman_id": "3b0715b0-0a7b-4046-b8de-86ce6e81c110",
+		"name": "Map-Backend",
+		"description": "# **1)Para realizar pruebas es necesario crear un Entidad Operadora**\n\nLos datos que permite el DTO son:\n\n<img src=\"https://content.pstmn.io/77ec2d99-02bb-436d-ac97-a9bc9aeb1f1e/aW1hZ2UucG5n\" width=\"454\" height=\"508\">\n\nPara actualizar los valores de la Entidad Operadora no es necesario pasarle todos los valores, solo aquellos que intentas actualizar:\n\n<img src=\"https://content.pstmn.io/88607c55-99cb-402a-8dd1-793c804779e7/aW1hZ2UucG5n\" width=\"370\" height=\"619\">\n\n# 2)Crear un empleado ADMIN o CHOFER:\n\nLos datos que permiten el DTO son los siguientes y es necesario utilizar el Id Entidad creado anteriormente:\n\n<img src=\"https://content.pstmn.io/a2268e27-5de7-4124-8e21-e3491751cd39/aW1hZ2UucG5n\" width=\"441\" height=\"510\">\n\nEl campo tipo_empleado solo tiene que tener los valores \"ADMIN\" o \"CHOFER\".\n\nPara pruebas de Tracking del chofer es necesario utilizar el tipo_empleado: \"CHOFER\".\n\nPara actualizar los valores del **Empleado** no es necesario pasarle todos los valores, solo aquellos que intentas actualizar:\n\n<img src=\"https://content.pstmn.io/abc6a6e9-89b4-43b3-ae18-7aece9d16090/aW1hZ2UucG5n\" alt=\"\" height=\"419\" width=\"313\">\n\n# 3)Crear micro:\n\nLos datos que permiten el DTO son los siguientes, donde es opcional el **Id Empleado** e Id **Ruta** pero es necesario para realizar pruebas tracking asignarle un **Empleado**:\n\n<img src=\"https://content.pstmn.io/afa3cb2c-47c1-4a47-93b5-77e1bce2d1e8/aW1hZ2UucG5n\" width=\"464\" height=\"613\">\n\nPara actualizar los valores del **Micro** no es necesario pasarle todos los valores, solo aquellos que intentas actualizar:\n\n<img src=\"https://content.pstmn.io/07a26498-8b6d-4811-a81d-e89739b6f3bf/aW1hZ2UucG5n\" alt=\"\" height=\"446\" width=\"397\">\n\n# 4)Crear Ruta:\n\nLos datos que permiten el DTO son los siguientes donde los **vertices** son los puntos que traza la ruta y la distancia siempre es **medida en mts**. y el **tiempo de la ruta es en min.**:\n\n<img src=\"https://content.pstmn.io/ac3cf869-7242-4b1d-945e-3f1b8714dd93/aW1hZ2UucG5n\" width=\"386\" height=\"671\">\n\nPara actualizar los valores de la **Ruta** no es necesario pasarle todos los valores, solo aquellos que intentas actualizar:\n\n<img src=\"https://content.pstmn.io/970bff67-5390-413f-90bb-e0cca9da6b50/aW1hZ2UucG5n\" alt=\"\" height=\"706\" width=\"494\">\n\n# 5)Luego de crear la ruta es posible crear las paradas:\n\nLos datos que permiten el DTO son los siguientes donde es necesario pasarle el **Id Ruta** a la que pertenece la parada y el tiempo de espera en cada **parada es en min.**:\n\n<img src=\"https://content.pstmn.io/629a7728-962b-4d9c-ad40-0b02d02b9e42/aW1hZ2UucG5n\" width=\"331\" height=\"525\">\n\nPara actualizar los valores de la **Parada** no es necesario pasarle todos los valores, solo aquellos que intentas actualizar:\n\n<img src=\"https://content.pstmn.io/91dacd11-eba5-4b90-ac33-738bd5c51506/aW1hZ2UucG5n\" alt=\"\" height=\"365\" width=\"320\">",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "20652450",
+		"_collection_link": "https://winter-space-910311.postman.co/workspace/Team-Workspace~0b27079e-b079-4be6-843c-9354fafba6fc/collection/43834592-3b0715b0-0a7b-4046-b8de-86ce6e81c110?action=share&source=collection_link&creator=20652450"
+	},
+	"item": [
+		{
+			"name": "Usuarios",
+			"item": [
+				{
+					"name": "Empleados",
+					"item": [
+						{
+							"name": "Crear Empleado",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"nombre\": \"María López\",\r\n  \"correo\": \"maria.lopez@municipalidad.gob.bo\",\r\n  \"contrasena\": \"Xyz789012!\",\r\n  \"tipo\": \"EMPLEADO\", // EMPLEADO, CLIENTE\r\n  \"empleado\": {\r\n    \"tipo\": \"CHOFER\", // CHOFER, ADMIN\r\n    \"id_entidad\": \"e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b\"\r\n  }\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/empleado",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"empleado"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Obtener Empleados",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{url_dev}}/empleado?search=&skip=0&limit=10",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"empleado"
+									],
+									"query": [
+										{
+											"key": "search",
+											"value": ""
+										},
+										{
+											"key": "skip",
+											"value": "0"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Obtener Empleado by Id",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{url_dev}}/empleado/e76t5r4e-3w2q-1p0o-9i8u-7y6t5r4e3w2q",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"empleado",
+										"e76t5r4e-3w2q-1p0o-9i8u-7y6t5r4e3w2q"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Actualizar Empleado",
+							"request": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"nombre\": \"María López\",\r\n  \"correo\": \"maria.lopez@municipalidad.gob.bo\",\r\n  \"contrasena\": \"Xyz789012!\",\r\n  \"empleado\": {\r\n    \"tipo\": \"EMPLEADO\",\r\n    \"id_entidad\": \"e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b\"\r\n  }\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/empleado/e76t5r4e-3w2q-1p0o-9i8u-7y6t5r4e3w2q",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"empleado",
+										"e76t5r4e-3w2q-1p0o-9i8u-7y6t5r4e3w2q"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Clientes",
+					"item": [
+						{
+							"name": "Crear Cliente",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"nombre\": \"Juan Pérez\",\r\n  \"correo\": \"correo@gmaill.com\",\r\n  \"contrasena\": \"12345678\",\r\n  \"tipo\": \"CLIENTE\",  // CLIENTE, EMPLEADO\r\n  \"cliente\": {\r\n    \"wallet_address\": \"0xdef456789abcdef123456789abcdef123456789ab\"\r\n  }\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/cliente",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"cliente"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Obtener Clientes",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{url_dev}}/cliente?search=&skip=0&limit=10",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"cliente"
+									],
+									"query": [
+										{
+											"key": "search",
+											"value": ""
+										},
+										{
+											"key": "skip",
+											"value": "0"
+										},
+										{
+											"key": "limit",
+											"value": "10"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Obtener Cliente by Id",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{url_dev}}/cliente/c98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"cliente",
+										"c98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Actualizar Cliente",
+							"request": {
+								"method": "PUT",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"usuario\": {\r\n    \"nombre\": \"Juan Alberto Pérez\",\r\n    \"correo\": \"juan.alberto@gmail.com\"\r\n  },\r\n  \"wallet_address\": \"0xdef456789abcdef123456789abcdef123456789cd\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/cliente/c98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"cliente",
+										"c98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Auth",
+					"item": [
+						{
+							"name": "Sign In",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n  \"correo\": \"juan.alberto@gmail.com\",\r\n  \"contrasena\": \"12345678\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/auth/sign-in",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"auth",
+										"sign-in"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Sign Up Cliente",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"nombre\": \"Juan Perez\",\r\n    \"correo\": \"correo@gmail.com\",\r\n    \"contrasena\": \"12345678\",\r\n    \"tipo\": \"CLIENTE\", // CLIENTE, EMPLEADO\r\n    \"wallet_address\": \"0xdef456789abcdef123456789abcdef123456789ab\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/auth/sign-up",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"auth",
+										"sign-up"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Sign Up Empleado",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"nombre\": \"Juan Perez\",\r\n    \"correo\": \"correo.chofer@gmail.com\",\r\n    \"contrasena\": \"12345678\",\r\n    \"tipo\": \"EMPLEADO\", // CLIENTE, EMPLEADO\r\n    \"tipo_empleado\": \"CHOFER\", // CHOFER, ADMIN\r\n    \"id_entidad\": \"3876ab94-5ab8-4597-aa7d-6eb550568735\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "{{url_dev}}/auth/sign-up",
+									"host": [
+										"{{url_dev}}"
+									],
+									"path": [
+										"auth",
+										"sign-up"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Cambiar Contraseña",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"contrasena\": \"Abc123456!\",\r\n  \"newPass\": \"NewPassword123!\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/usuario/password/u98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"usuario",
+								"password",
+								"u98f7e6d-5c4b-3a2b-1c0d-ef1gh2i3j4k5"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "EntidadOperadora",
+			"item": [
+				{
+					"name": "Crear Entidad",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"nombre\": \"Municipalidad de Santa Cruz\",\r\n  \"tipo\": \"PÚBLICA\",\r\n  \"correo_contacto\": \"contacto@municipalidad.gob.bo\",\r\n  \"wallet_address\": \"0x123456789abcdef123456789abcdef123456789a\",\r\n  \"direccion\": \"Av. Irala #123, Santa Cruz de la Sierra\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/entidad-operadora",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"entidad-operadora"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Entidades",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/entidad-operadora",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"entidad-operadora"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Entidad by Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}entidad-operadora/e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b",
+							"host": [
+								"{{url_dev}}entidad-operadora"
+							],
+							"path": [
+								"e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Entidad",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"nombre\": \"Gobierno Municipal de Santa Cruz\",\r\n  \"tipo\": \"PÚBLICA\",\r\n  \"correo_contacto\": \"contacto@municipalidad.gob.bo\",\r\n  \"wallet_address\": \"0x123456789abcdef123456789abcdef123456789a\",\r\n  \"direccion\": \"Av. Irala #123, Zona Central, Santa Cruz de la Sierra\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/entidad-operadora/3876ab94-5ab8-4597-aa7d-6eb550568735",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"entidad-operadora",
+								"3876ab94-5ab8-4597-aa7d-6eb550568735"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Eliminar Entidad",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/entidad-operadora/e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"entidad-operadora",
+								"e85c0f3d-5a5a-4b4b-9c1d-97e23e5a7c9b"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Rutas",
+			"item": [
+				{
+					"name": "Obtener Rutas By Id Entidad",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/ruta/ba9a8fc5-8366-40ab-8d77-347448750acf",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"ruta",
+								"ba9a8fc5-8366-40ab-8d77-347448750acf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Ruta By Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/ruta/find/9302760b-018c-4567-870b-32402d371f1e",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"ruta",
+								"find",
+								"9302760b-018c-4567-870b-32402d371f1e"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Crear Ruta",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"nombre\": \"Ruta B\",\r\n    \"descripcion\": \"Ruta B de Santa Cruz\",\r\n    \"origenLat\": \"40.7127837\" ,\r\n    \"origenLong\": \"-74.0059413\" ,\r\n    \"destinoLat\": \"40.7127837\" ,\r\n    \"destinoLong\": \"-74.0059413\" ,\r\n    \"distancia\": 100.0,\r\n    \"tiempo\": 5.5, //Siempre representada en min\r\n    \"vertices\": \"12345678\",\r\n    \"id_entidad\": \"ba9a8fc5-8366-40ab-8d77-347448750acf\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/ruta/ba9a8fc5-8366-40ab-8d77-347448750acf",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"ruta",
+								"ba9a8fc5-8366-40ab-8d77-347448750acf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Ruta",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"nombre\": \"Ruta B.2\",\r\n    \"descripcion\": \"Ruta B.2 de Santa Cruz\",\r\n    \"origenLat\": \"40.7127837\" ,\r\n    \"origenLong\": \"-74.0059413\" ,\r\n    \"destinoLat\": \"40.7127837\" ,\r\n    \"destinoLong\": \"-74.0059413\" ,\r\n    \"distancia\": 100.0,\r\n    \"tiempo\": 5.5, //Siempre representada en min\r\n    \"vertices\": \"12345678\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/ruta/cdb5c528-82e8-433b-a679-cd8e27613485",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"ruta",
+								"cdb5c528-82e8-433b-a679-cd8e27613485"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Eliminar Ruta",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/ruta/cdb5c528-82e8-433b-a679-cd8e27613485",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"ruta",
+								"cdb5c528-82e8-433b-a679-cd8e27613485"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Micros",
+			"item": [
+				{
+					"name": "Obtener Micros By Entidad",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/micro/ba9a8fc5-8366-40ab-8d77-347448750acf",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"micro",
+								"ba9a8fc5-8366-40ab-8d77-347448750acf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Micro By Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/micro/find/6962ef89-35df-4aca-a72a-8f8bf9f0e9a1",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"micro",
+								"find",
+								"6962ef89-35df-4aca-a72a-8f8bf9f0e9a1"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Crear Micro",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"placa\" : \"ABC123\",\r\n    \"color\": \"#FFFF\",\r\n    \"estado\": true,\r\n    \"id_entidad\": \"3876ab94-5ab8-4597-aa7d-6eb550568735\",\r\n    \"id_empleado\": \"ca156529-71f0-4e61-937f-60d1a11f157d\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/micro/3876ab94-5ab8-4597-aa7d-6eb550568735",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"micro",
+								"3876ab94-5ab8-4597-aa7d-6eb550568735"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Micro",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"placa\" : \"ABC123\",\r\n    \"color\": \"#0000\",\r\n    \"estado\": false\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/micro/6962ef89-35df-4aca-a72a-8f8bf9f0e9a1",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"micro",
+								"6962ef89-35df-4aca-a72a-8f8bf9f0e9a1"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Eliminar Micro",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/micro/6962ef89-35df-4aca-a72a-8f8bf9f0e9a1",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"micro",
+								"6962ef89-35df-4aca-a72a-8f8bf9f0e9a1"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Parada",
+			"item": [
+				{
+					"name": "Obtener Paradas By Id Ruta",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/parada/ba9a8fc5-8366-40ab-8d77-347448750acf",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"parada",
+								"ba9a8fc5-8366-40ab-8d77-347448750acf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Obtener Parada By Id",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/parada/find/9302760b-018c-4567-870b-32402d371f1e",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"parada",
+								"find",
+								"9302760b-018c-4567-870b-32402d371f1e"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Crear Parada",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"nombre\": \"Ruta B\",\r\n    \"latitud\": -17.783341, \r\n    \"longitud\": -63.181918,\r\n    \"tiempo\": 5.5, // representado en min.\r\n    \"id_ruta\": \"ba9a8fc5-8366-40ab-8d77-347448750acf\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/parada/ba9a8fc5-8366-40ab-8d77-347448750acf",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"parada",
+								"ba9a8fc5-8366-40ab-8d77-347448750acf"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Actualizar Parada",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"nombre\": \"Ruta B\",\r\n    \"latitud\": -17.783341, \r\n    \"longitud\": -63.181918,\r\n    \"tiempo\": 5.5 // representado en min.\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{url_dev}}/parada/cdb5c528-82e8-433b-a679-cd8e27613485",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"parada",
+								"cdb5c528-82e8-433b-a679-cd8e27613485"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Eliminar Parada",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{url_dev}}/parada/cdb5c528-82e8-433b-a679-cd8e27613485",
+							"host": [
+								"{{url_dev}}"
+							],
+							"path": [
+								"parada",
+								"cdb5c528-82e8-433b-a679-cd8e27613485"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "url_dev",
+			"value": "http://localhost:3001/api",
+			"type": "string"
+		}
+	]
+}
