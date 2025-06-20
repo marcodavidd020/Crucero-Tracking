@@ -108,6 +108,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       appBar: AppBar(
         title: const Text('Iniciar Sesión'),
         backgroundColor: Theme.of(context).colorScheme.primary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // Navegar de vuelta a la selección de tipo de usuario
+            context.go('/user-type-selection');
+          },
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),

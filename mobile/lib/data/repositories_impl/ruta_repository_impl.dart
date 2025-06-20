@@ -1,3 +1,6 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:app_map_tracking/data/datasource/api/ruta_api_datasource.dart';
 import 'package:app_map_tracking/data/datasource/local/ruta_local_datasource.dart';
 import 'package:app_map_tracking/domain/entities/ruta.dart';
@@ -11,11 +14,113 @@ class RutaRepositoryImpl implements RutaRepository {
   RutaRepositoryImpl(this.api, this.local);
 
   @override
-  Future<Ruta> getRutaByIdEntidad(String idEntidad) async {
-    // 🔄 MODO SOLO LOCAL - No intentar API
-    print("🔄 Obteniendo rutas SOLO desde base de datos local para entidad: $idEntidad");
+  Future<List<Ruta>> getAllRutas() async {
+    print("🔍 === OBTENIENDO TODAS LAS RUTAS CON SOPORTE OFFLINE ===");
     
     try {
+      // PASO 1: Verificar conectividad
+      final hasConnection = await _hasInternetConnection();
+      
+      if (hasConnection) {
+        // PASO 2: Intentar obtener desde API si hay conexión
+        try {
+          print("🌐 Intentando obtener rutas desde API...");
+          final apiData = await api.fetchAllRutas();
+          
+          if (apiData.isNotEmpty) {
+            print("✅ API: Recibidas ${apiData.length} rutas desde backend");
+            
+            // PASO 3: Guardar en BD local para uso offline
+            await local.clearAll();
+            await local.saveAll(apiData);
+            print("💾 Rutas guardadas en BD local para uso offline");
+            
+            return apiData.map((model) => model.toEntity()).toList();
+          }
+        } catch (e) {
+          print("⚠️ Error obteniendo desde API: $e");
+          print("🔄 Intentando con datos locales...");
+        }
+      } else {
+        print("🔴 Sin conexión a internet - usando modo offline");
+      }
+      
+      // PASO 4: Fallback a datos locales
+      final allLocalData = await local.getAll();
+      print("💾 Total de rutas locales encontradas: ${allLocalData.length}");
+      
+      if (allLocalData.isEmpty) {
+        print("⚠️  No hay rutas en la base de datos local");
+        print("💡 Poblando datos de prueba de respaldo...");
+        
+        await poblarRutasPrueba();
+        
+        final newLocalData = await local.getAll();
+        if (newLocalData.isNotEmpty) {
+          print("✅ Datos de respaldo poblados. Total: ${newLocalData.length} rutas");
+          return newLocalData.map((model) => model.toEntity()).toList();
+        } else {
+          print("❌ No se pudieron poblar las rutas");
+          return [];
+        }
+      }
+      
+      // Convertir modelos a entidades
+      final rutas = allLocalData.map((model) => model.toEntity()).toList();
+      
+      // Debug: mostrar información de las rutas
+      for (int i = 0; i < rutas.length; i++) {
+        final ruta = rutas[i];
+        print("🛣️ Ruta ${i + 1}: ${ruta.nombre} (${ruta.id}) - Entidad: ${ruta.idEntidad}");
+      }
+      
+      return rutas;
+      
+    } catch (e) {
+      print("❌ Error al obtener todas las rutas: $e");
+      return [];
+    }
+  }
+
+  @override
+  Future<Ruta> getRutaByIdEntidad(String idEntidad) async {
+    print("🔍 === OBTENIENDO RUTA POR ENTIDAD CON SOPORTE OFFLINE ===");
+    print("🏢 Entidad solicitada: $idEntidad");
+    
+    try {
+      // PASO 1: Verificar conectividad
+      final hasConnection = await _hasInternetConnection();
+      
+      if (hasConnection) {
+        // PASO 2: Intentar obtener desde API si hay conexión
+        try {
+          print("🌐 Intentando obtener rutas de entidad desde API...");
+          final apiData = await api.fetchAllRutas();
+          
+          if (apiData.isNotEmpty) {
+            // Filtrar por entidad
+            final rutasEntidad = apiData.where((r) => r.idEntidad == idEntidad).toList();
+            
+            if (rutasEntidad.isNotEmpty) {
+              print("✅ API: ${rutasEntidad.length} rutas encontradas para entidad $idEntidad");
+              
+              // Guardar en BD local
+              await local.clearAll();
+              await local.saveAll(apiData);
+              print("💾 Rutas guardadas en BD local para uso offline");
+              
+              return rutasEntidad[0].toEntity();
+            }
+          }
+        } catch (e) {
+          print("⚠️ Error obteniendo desde API: $e");
+          print("🔄 Intentando con datos locales...");
+        }
+      } else {
+        print("🔴 Sin conexión a internet - usando modo offline");
+      }
+      
+      // PASO 3: Fallback a datos locales
       final localData = await local.getRutasByEntidad(idEntidad);
       
       if (localData.isNotEmpty) {
@@ -24,12 +129,10 @@ class RutaRepositoryImpl implements RutaRepository {
         return localData[0].toEntity();
       } else {
         print("⚠️  No hay rutas para la entidad $idEntidad en la base de datos local");
-        print("💡 Tip: Primero necesitas poblar la BD con datos de prueba");
+        print("💡 Poblando datos de prueba de respaldo...");
         
-        // Poblar datos de prueba si no hay datos
         await poblarRutasPrueba();
         
-        // Intentar de nuevo después de poblar
         final newLocalData = await local.getRutasByEntidad(idEntidad);
         if (newLocalData.isNotEmpty) {
           return newLocalData[0].toEntity();
@@ -38,9 +141,52 @@ class RutaRepositoryImpl implements RutaRepository {
         }
       }
     } catch (e) {
-      print("❌ Error al obtener rutas locales: $e");
+      print("❌ Error al obtener rutas de entidad: $e");
       rethrow;
     }
+  }
+
+  // MÉTODO AUXILIAR: Verificar conectividad a internet
+  Future<bool> _hasInternetConnection() async {
+    try {
+      final connectivity = Connectivity();
+      final connectivityResult = await connectivity.checkConnectivity();
+      final hasConnection = connectivityResult.isNotEmpty && 
+                           !connectivityResult.contains(ConnectivityResult.none);
+      
+      if (hasConnection) {
+        print('🟢 Conexión a internet disponible');
+      } else {
+        print('🔴 Sin conexión a internet - modo offline activado');
+      }
+      
+      return hasConnection;
+    } catch (e) {
+      print('⚠️ Error verificando conectividad: $e');
+      return false; // Asumir sin conexión en caso de error
+    }
+  }
+
+  // MÉTODO AUXILIAR: Forzar sincronización cuando hay internet
+  Future<void> syncWhenOnline() async {
+    if (await _hasInternetConnection()) {
+      print('🔄 Sincronizando datos con el servidor...');
+      
+      try {
+        await getAllRutas(); // Esto actualizará la BD local automáticamente
+        print('✅ Sincronización completada');
+      } catch (e) {
+        print('❌ Error en sincronización: $e');
+      }
+    } else {
+      print('⚠️ No hay conexión para sincronizar');
+    }
+  }
+
+  // MÉTODO AUXILIAR: Limpiar datos locales
+  Future<void> clearLocalData() async {
+    await local.clearAll();
+    print('🗑️ Datos locales de rutas limpiados');
   }
 
   // ➕ Función para poblar rutas de prueba localmente
@@ -123,72 +269,6 @@ class RutaRepositoryImpl implements RutaRepository {
     } catch (e) {
       print("❌ Error al poblar rutas de prueba: $e");
       rethrow;
-    }
-  }
-
-  @override
-  Future<List<Ruta>> getAllRutas() async {
-    print("🔍 === OBTENIENDO TODAS LAS RUTAS ===");
-    
-    try {
-      // 🌐 Intentar obtener desde API primero (ahora usando entidades → rutas)
-      try {
-        print("🌐 Intentando obtener rutas desde API (entidades → rutas)...");
-        final apiData = await api.fetchAllRutas();
-        
-        if (apiData.isNotEmpty) {
-          print("✅ API: Recibidas ${apiData.length} rutas desde backend");
-          
-          // 🗑️ Limpiar caché antes de guardar datos nuevos del API
-          await local.clearAll();
-          
-          // Guardar en local para caché
-          await local.saveAll(apiData);
-          print("💾 Rutas del backend guardadas en caché local");
-          
-          return apiData.map((model) => model.toEntity()).toList();
-        }
-      } catch (e) {
-        print("⚠️ Error de API (entidades → rutas): $e");
-        print("🔄 Intentando con datos locales...");
-      }
-      
-      // 📱 Fallback a datos locales
-      final allLocalData = await local.getAll();
-      print("💾 Total de rutas locales encontradas: ${allLocalData.length}");
-      
-      if (allLocalData.isEmpty) {
-        print("⚠️  No hay rutas en la base de datos local");
-        print("💡 Intentando poblar datos de prueba de respaldo...");
-        
-        // Poblar datos de prueba solo si no hay conexión al backend
-        await poblarRutasPrueba();
-        
-        // Intentar de nuevo después de poblar
-        final newLocalData = await local.getAll();
-        if (newLocalData.isNotEmpty) {
-          print("✅ Datos de respaldo poblados. Total: ${newLocalData.length} rutas");
-          return newLocalData.map((model) => model.toEntity()).toList();
-        } else {
-          print("❌ No se pudieron poblar las rutas");
-          return [];
-        }
-      }
-      
-      // Convertir modelos a entidades
-      final rutas = allLocalData.map((model) => model.toEntity()).toList();
-      
-      // Debug: mostrar información de las rutas
-      for (int i = 0; i < rutas.length; i++) {
-        final ruta = rutas[i];
-        print("🛣️ Ruta ${i + 1}: ${ruta.nombre} (${ruta.id}) - Entidad: ${ruta.idEntidad}");
-      }
-      
-      return rutas;
-      
-    } catch (e) {
-      print("❌ Error al obtener todas las rutas: $e");
-      return [];
     }
   }
 }
