@@ -14,12 +14,16 @@ class ClientTrackingService {
   Timer? _connectionCheckTimer;
   final Map<String, Symbol> _microMarkers = {};
   String? _selectedRouteId;
+  StreamSubscription? _locationSubscription;
+  StreamSubscription? _connectionSubscription;
 
   ClientTrackingService(this.ref);
 
   void dispose() {
     _mounted = false;
     _connectionCheckTimer?.cancel();
+    _locationSubscription?.cancel();
+    _connectionSubscription?.cancel();
     trackingService?.dispose();
   }
 
@@ -35,25 +39,77 @@ class ClientTrackingService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final clientId = 'client-$timestamp';
       
+      print('🔌 Cliente inicializando socket...');
+      print('📍 URL: $baseUrlSocket');
+      print('🚌 ClientId: $clientId');
+      print('📡 Modo: SOLO ESCUCHA (cliente)');
+      
+      // CRÍTICO: Usar el mismo socket que los choferes, pero sin tracking de ubicación
       await trackingService!.initSocket(
-        // 'http://54.82.231.172:3001',
         baseUrlSocket,
         clientId,
         'client-token-$timestamp',
         enableLocationTracking: false // Clientes NO envían ubicación
       );
       
-      print('🔌 Inicializando socket para tracking...');
-      print('📍 URL: http://54.82.231.172:3001');
-      print('🚌 MicroId: $clientId');
-      print('📡 Tracking activo: false (SOLO ESCUCHA)');
+      // Configurar listeners después de la inicialización
+      _setupSocketListeners();
       
       // Monitorear conexión cada 30 segundos
       _startConnectionMonitoring();
       
+      print('✅ Socket cliente inicializado correctamente');
+      
     } catch (e) {
-      print('❌ Error inicializando tracking: $e');
+      print('❌ Error inicializando tracking cliente: $e');
     }
+  }
+
+  void _setupSocketListeners() {
+    if (trackingService == null) return;
+    
+    // Escuchar actualizaciones de ubicación de rutas específicas
+    _locationSubscription = trackingService!
+        .on<Map<String, dynamic>>(TrackingEventType.routeLocationUpdate)
+        .listen(
+          (data) {
+            print('📍 CLIENTE recibió actualización de ruta: $data');
+            _handleRouteLocationUpdate(data);
+          },
+          onError: (error) {
+            print('❌ Error en stream de ubicaciones de ruta: $error');
+          },
+          onDone: () {
+            print('⚠️ Stream de ubicaciones de ruta cerrado');
+          },
+        );
+
+    // Escuchar cambios de estado de conexión
+    _connectionSubscription = trackingService!
+        .on<bool>(TrackingEventType.connectionStatusChanged)
+        .listen(
+          (isConnected) {
+            print('🔌 Estado de conexión cambió: $isConnected');
+            if (isConnected && _selectedRouteId != null) {
+              // Reconectar a la ruta si estábamos escuchando una
+              Future.delayed(const Duration(seconds: 1), () {
+                if (_mounted && trackingService?.isConnected == true) {
+                  trackingService!.joinRouteTracking(_selectedRouteId!);
+                  print('🔄 Reconectado a la ruta: $_selectedRouteId');
+                }
+              });
+            }
+          },
+        );
+  }
+
+  void _handleRouteLocationUpdate(Map<String, dynamic> data) {
+    // Procesar la actualización de ubicación aquí
+    // Este método será llamado por el ClientRouteManager
+    print('📍 Procesando actualización de ubicación para el mapa...');
+    print('   🚌 Micro: ${data['microId']}');
+    print('   🛣️ Ruta: ${data['routeId']}');
+    print('   📍 Ubicación: ${data['location']}');
   }
 
   void _startConnectionMonitoring() {
@@ -65,7 +121,7 @@ class ClientTrackingService {
       }
       
       if (trackingService?.isConnected != true) {
-        print('🔄 Reconectando servicio de tracking...');
+        print('🔄 Reconectando servicio de tracking cliente...');
         _reconnectService();
       }
     });
@@ -75,10 +131,18 @@ class ClientTrackingService {
     if (!_mounted) return;
     
     try {
-      await trackingService?.dispose();
+      // No dispose completo, solo reconectar
       await initializeTracking();
+      
+      // Reunirse a la ruta si teníamos una seleccionada
+      if (_selectedRouteId != null) {
+        await Future.delayed(const Duration(seconds: 2));
+        if (trackingService?.isConnected == true) {
+          trackingService!.joinRouteTracking(_selectedRouteId!);
+        }
+      }
     } catch (e) {
-      print('❌ Error en reconexión: $e');
+      print('❌ Error en reconexión cliente: $e');
     }
   }
 
@@ -87,13 +151,16 @@ class ClientTrackingService {
   void joinRouteTracking(String routeId, BuildContext context) {
     if (!_mounted) return;
     
+    _selectedRouteId = routeId;
+    
     if (trackingService?.isConnected == true) {
+      print('🛣️ Cliente uniéndose a ruta: $routeId');
       trackingService!.joinRouteTracking(routeId);
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('🛣️ Siguiendo ruta en tiempo real'),
+            content: Text('🛣️ Siguiendo micros de la ruta en tiempo real'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -105,7 +172,7 @@ class ClientTrackingService {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('⚠️ Sin conexión al servidor'),
+            content: Text('⚠️ Sin conexión al servidor de tracking'),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 2),
           ),
@@ -117,8 +184,21 @@ class ClientTrackingService {
   void leaveRouteTracking(String routeId) {
     if (trackingService?.isConnected == true) {
       trackingService!.leaveRouteTracking(routeId);
-      print('🚪 Dejó de seguir la ruta: $routeId');
+      print('🚪 Cliente dejó de seguir la ruta: $routeId');
     }
+    _selectedRouteId = null;
+  }
+
+  // ========== GETTERS ==========
+  
+  bool get isConnected => trackingService?.isConnected ?? false;
+  
+  Stream<Map<String, dynamic>>? get locationUpdates {
+    return trackingService?.on<Map<String, dynamic>>(TrackingEventType.routeLocationUpdate);
+  }
+  
+  Stream<bool>? get connectionStatus {
+    return trackingService?.on<bool>(TrackingEventType.connectionStatusChanged);
   }
 
   // ========== ACTUALIZACIÓN DE MARCADORES ==========
@@ -127,67 +207,68 @@ class ClientTrackingService {
     MapLibreMapController controller, 
     Map<String, dynamic> locationData
   ) async {
-    if (!_mounted) return;
-    
     try {
-      final microId = locationData['id_micro'];
-      final lat = locationData['latitud']?.toDouble();
-      final lng = locationData['longitud']?.toDouble();
+      if (!_mounted) return;
       
-      if (lat == null || lng == null) {
-        print('⚠️ Datos de ubicación inválidos: $locationData');
+      final microId = locationData['microId']?.toString();
+      final location = locationData['location'];
+      
+      if (microId == null || location == null) {
+        print('⚠️ Datos de ubicación incompletos: microId=$microId, location=$location');
         return;
       }
       
-      print('🚌 Actualizando ubicación del micro $microId: $lat, $lng');
+      final lat = location['latitud']?.toDouble();
+      final lng = location['longitud']?.toDouble();
+      
+      if (lat == null || lng == null) {
+        print('⚠️ Coordenadas inválidas: lat=$lat, lng=$lng');
+        return;
+      }
+      
+      print('📍 Actualizando marcador en mapa: $microId -> ($lat, $lng)');
+      
+      // Crear el marcador del micro
+      final microSymbol = Symbol(
+        microId,
+        SymbolOptions(
+          geometry: LatLng(lat, lng),
+          iconImage: 'bus-marker',
+          iconSize: 0.8,
+          textField: 'Micro $microId',
+          textSize: 12,
+          textColor: '#000000',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1,
+          textOffset: const Offset(0, 2),
+        ),
+      );
       
       // Remover marcador anterior si existe
-      await _removePreviousMarker(controller, microId);
+      if (_microMarkers.containsKey(microId)) {
+        await controller.removeSymbol(_microMarkers[microId]!);
+      }
       
       // Agregar nuevo marcador
-      await controller.addSymbol(SymbolOptions(
-        geometry: LatLng(lat, lng),
-        iconImage: 'bus-marker',
-        iconSize: 0.8,
-        textField: '🚌',
-        textSize: 20,
-        textColor: '#FFFFFF',
-        textHaloColor: '#FF0000',
-        textHaloWidth: 2,
-        textOffset: const Offset(0, -2),
-      ));
+      final addedSymbol = await controller.addSymbol(microSymbol.options);
+      _microMarkers[microId] = addedSymbol;
       
-      print('✅ Marcador actualizado en el mapa');
+      print('✅ Marcador actualizado en mapa para micro $microId');
       
     } catch (e) {
       print('❌ Error actualizando marcador: $e');
     }
   }
-
-  Future<void> _removePreviousMarker(
-    MapLibreMapController controller, 
-    String microId
-  ) async {
+  
+  Future<void> clearAllMarkers(MapLibreMapController controller) async {
     try {
-      // Obtener todos los símbolos y remover los del micro específico
-      final symbols = await controller.symbols;
-      for (final symbol in symbols) {
-        if (symbol.options.textField?.contains('🚌') == true) {
-          await controller.removeSymbol(symbol);
-        }
+      for (final symbol in _microMarkers.values) {
+        await controller.removeSymbol(symbol);
       }
+      _microMarkers.clear();
+      print('🧹 Todos los marcadores de micros removidos');
     } catch (e) {
-      print('⚠️ Error removiendo marcador anterior: $e');
+      print('❌ Error limpiando marcadores: $e');
     }
   }
-
-  // ========== GETTERS ==========
-  
-  bool get isConnected => trackingService?.isConnected ?? false;
-  
-  Stream<Map<String, dynamic>>? get locationUpdates => 
-      trackingService?.on<Map<String, dynamic>>(TrackingEventType.routeLocationUpdate);
-      
-  Stream<bool>? get connectionStatus => 
-      trackingService?.on<bool>(TrackingEventType.connectionStatusChanged);
 } 

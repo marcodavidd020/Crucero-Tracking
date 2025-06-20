@@ -18,7 +18,7 @@ class TrackingSocketService{
   factory TrackingSocketService() => _instance;
   TrackingSocketService._internal();
 
-  // Cliente socket - ARREGLO: Cambiar de late a nullable
+  // Cliente socket
   IO.Socket? socket;
 
   // Stream controllers para diferentes eventos
@@ -39,7 +39,7 @@ class TrackingSocketService{
   Timer? _reconnectTimer;
 
   // Duración entre actualizaciones de ubicación (en segundos)
-  int _updateInterval = 5; // Aumentar a 5 segundos para evitar spam
+  int _updateInterval = 10; // Aumentar a 5 segundos para evitar spam
   set updateInterval(int seconds) {
     _updateInterval = seconds;
     _restartLocationTracking();
@@ -56,36 +56,39 @@ class TrackingSocketService{
       print('🚌 MicroId: $microId');
       print('📡 Tracking activo: $_shouldTrackLocation${enableLocationTracking ? " (ENVÍA UBICACIÓN)" : " (SOLO ESCUCHA)"}');
 
-      // ARREGLO: Limpiar socket anterior si existe
+      // Limpiar socket anterior si existe
       if (socket != null) {
         socket?.disconnect();
         socket = null;
       }
 
-      // CRÍTICO: Usar namespace principal porque /tracking da 404
-      final trackingUrl = url; // Sin /tracking
-      print('📡 Conectando al namespace principal: $trackingUrl');
-      print('📡 Autenticación: microId=$microId, type=${enableLocationTracking ? 'driver' : 'client'}');
+      // CRÍTICO: TODOS se conectan al namespace /tracking según el backend desplegado
+      final trackingUrl = url.endsWith('/') ? '${url}tracking' : '$url/tracking';
       
-      // Configuración del socket
+      print('📡 ⭐ TODOS conectan al namespace /tracking: $trackingUrl');
+      print('📡 ⭐ Autenticación: microId=$microId, token presente=${token.isNotEmpty}');
+      
+      // Configuración del socket según el backend desplegado
       socket = IO.io(trackingUrl, IO.OptionBuilder()
-          .setTransports(['websocket', 'polling']) // Permitir fallback a polling
+          .setTransports(['websocket', 'polling'])
           .enableAutoConnect()
-          .setTimeout(15000) // Timeout de 15 segundos
+          .setTimeout(30000)  // Aumentar timeout
+          .enableReconnection()
+          .setReconnectionAttempts(5)
+          .setReconnectionDelay(2000)
+          .setReconnectionDelayMax(10000)
           .setAuth({
-            'microId': microId,
-            'token': token,
-            'type': enableLocationTracking ? 'driver' : 'client'
+            'microId': microId,  // REQUERIDO por el backend
+            'token': token,      // REQUERIDO por el backend
           })
           .build()
       );
 
-      // ARREGLO: Verificar que el socket se creó correctamente
       if (socket == null) {
         throw Exception('No se pudo crear el socket');
       }
 
-      socket?.onConnect((_){
+      socket?.onConnect((_) {
         print('✅ Conexión establecida con el servidor de tracking');
         print('🔗 ID del socket: ${socket?.id}');
         print('🔗 Namespace: ${socket?.nsp}');
@@ -112,32 +115,49 @@ class TrackingSocketService{
         _isConnected = false;
         _emitEvent(TrackingEventType.connectionStatusChanged, false);
         
-        // MEJORADO: Reconexión más agresiva para empleados (drivers)
         if (_shouldTrackLocation) {
           print('🔄 Driver desconectado, programando reconexión inmediata...');
           _scheduleReconnect();
         } else {
-          // Solo reconectar para clientes si la desconexión no fue intencional
           if (reason != 'io client disconnect') {
             _scheduleReconnect();
           }
         }
       });
 
-      socket?.onError((error){
+      socket?.onError((error) {
         print('❌ Error en socket de tracking: $error');
         print('❌ Tipo de error: ${error.runtimeType}');
       });
 
-      socket?.onConnectError((error){
+      socket?.onConnectError((error) {
         print('❌ Error de conexión al socket de tracking: $error');
         print('❌ Tipo de error de conexión: ${error.runtimeType}');
         _isConnected = false;
       });
 
+      socket?.on('disconnect', (reason) {
+        print('💥 ⭐ DISCONNECT DETALLADO: $reason');
+        print('💥 ⭐ Tipo de razón: ${reason.runtimeType}');
+        print('💥 ⭐ Socket ID: ${socket?.id}');
+        print('💥 ⭐ Namespace: ${socket?.nsp}');
+        print('💥 ⭐ Connected: ${socket?.connected}');
+        
+        if (reason == 'io server disconnect') {
+          print('💥 ⭐ CRÍTICO: El servidor cerró la conexión deliberadamente');
+          print('💥 ⭐ Posibles causas:');
+          print('💥 ⭐ - Validación fallida en el backend');
+          print('💥 ⭐ - MicroId no autorizado');
+          print('💥 ⭐ - Token inválido');
+          print('💥 ⭐ - Micro sin ruta asignada');
+          print('💥 ⭐ - Múltiples conexiones con mismo microId');
+          print('💥 ⭐ - Timeout del servidor');
+          print('💥 ⭐ - Payload demasiado grande');
+        }
+      });
+
       _setupEventListeners();
       
-      // Solo para drivers
       if (_shouldTrackLocation) {
         _setupConnectivityMonitoring();
         await _loadPendingLocations();
@@ -156,10 +176,9 @@ class TrackingSocketService{
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
     
-    // Tiempo de reconexión más corto para drivers (empleados)
     final reconnectDelay = _shouldTrackLocation 
-        ? const Duration(seconds: 3)  // 3 segundos para drivers
-        : const Duration(seconds: 5); // 5 segundos para clientes
+        ? const Duration(seconds: 3)
+        : const Duration(seconds: 5);
     
     print('⏱️ Programando reconexión en ${reconnectDelay.inSeconds} segundos...');
     
@@ -178,27 +197,78 @@ class TrackingSocketService{
       _emitEvent(TrackingEventType.locationUpdate, data);
     });
     
-    // Listener para datos iniciales de tracking
+    // Listener para datos iniciales de tracking (según el backend)
     socket?.on('initialTrackingData', (data) {
       print('📡 Recibido evento initialTrackingData: $data');
-      _emitEvent(TrackingEventType.initialTrackingData, data);
+      if (data is List) {
+        print('📍 Datos iniciales de tracking: ${data.length} registros');
+        _emitEvent(TrackingEventType.initialTrackingData, data);
+      }
     });
     
-    // CRÍTICO: Listener para actualizaciones de ruta específica (esto es lo que necesita el cliente)
+    // Listener para actualizaciones de ruta específica (lo que necesita el cliente)
     socket?.on('routeLocationUpdate', (data) {
-      print('📍 RECIBIDO evento routeLocationUpdate: $data');
-      print('📍 Tipo de datos: ${data.runtimeType}');
-      print('📍 Contenido: ${data.toString()}');
-      _emitEvent(TrackingEventType.routeLocationUpdate, data);
+      print('📍 ⭐ CRÍTICO: RECIBIDO evento routeLocationUpdate: $data');
+      print('📍 ⭐ Tipo de datos: ${data.runtimeType}');
+      
+      if (data is Map<String, dynamic>) {
+        print('📍 ⭐ Datos válidos - emitiendo al stream');
+        _emitEvent(TrackingEventType.routeLocationUpdate, data);
+      } else {
+        print('📍 ⚠️ Datos inválidos recibidos: ${data.runtimeType}');
+      }
     });
 
-    // Listeners para confirmación de unión/salida de rutas
-    socket?.on('joinedRoute', (data) {
-      print('✅ Confirmación del servidor - Unido a ruta: $data');
+    // Listeners para confirmación de unión/salida de rutas del socket principal
+    socket?.on('joinedRouteTracking', (data) {
+      print('✅ Cliente unido al tracking de ruta: $data');
     });
     
-    socket?.on('leftRoute', (data) {
-      print('👋 Confirmación del servidor - Salió de ruta: $data');
+    socket?.on('leftRouteTracking', (data) {
+      print('👋 Cliente salió del tracking de ruta: $data');
+    });
+    
+    // CRÍTICO: Listeners específicos para debugging de desconexión
+    socket?.on('connect_error', (data) {
+      print('🔴 ⭐ CONNECT_ERROR: $data');
+      print('🔴 ⭐ Tipo: ${data.runtimeType}');
+      if (data is Map) {
+        print('🔴 ⭐ Message: ${data['message']}');
+        print('🔴 ⭐ Description: ${data['description']}');
+        print('🔴 ⭐ Context: ${data['context']}');
+      }
+    });
+    
+    // Listeners adicionales para debug
+    socket?.on('error', (data) {
+      print('❌ ERROR del servidor: $data');
+    });
+    
+    // NUEVO: Listener para errores de autorización
+    socket?.on('unauthorized', (data) {
+      print('🔐 ⭐ UNAUTHORIZED: $data');
+    });
+    
+    socket?.on('forbidden', (data) {
+      print('🚫 ⭐ FORBIDDEN: $data');
+    });
+    
+    socket?.on('validation_error', (data) {
+      print('📝 ⭐ VALIDATION_ERROR: $data');
+    });
+    
+    // NUEVO: Detectar conexiones exitosas
+    socket?.on('connect', (_) {
+      print('✅ ⭐ CONEXIÓN EXITOSA CONFIRMADA');
+      print('✅ ⭐ Socket ID: ${socket?.id}');
+      print('✅ ⭐ Namespace: ${socket?.nsp}');
+      print('✅ ⭐ Connected: ${socket?.connected}');
+      print('✅ ⭐ Auth enviado: microId=$_microId, token válido=${_authToken.isNotEmpty}');
+    });
+    
+    // Debug de todos los eventos recibidos
+    socket?.onAny((event, data) {
+      print('🔍 ⭐ EVENTO DEBUG: $event -> $data');
     });
   }
 
@@ -207,7 +277,6 @@ class TrackingSocketService{
   }
 
   Future<void> _updateConnectionStatus(List<ConnectivityResult> result) async {
-    // Solo reconectar si es necesario y no estamos conectados
     if (result.isNotEmpty && result.first != ConnectivityResult.none) {
       if (!_isConnected && socket != null) {
         await Future.delayed(const Duration(seconds: 2));
@@ -288,30 +357,16 @@ class TrackingSocketService{
         timeLimit: const Duration(seconds: 10),
       );
 
-      // CRÍTICO: Obtener ruta activa SIEMPRE desde SharedPreferences
-      String rutaId = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d'; // Fallback
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final rutaActivaId = prefs.getString('ruta_activa_id');
-        if (rutaActivaId != null && rutaActivaId.isNotEmpty) {
-          rutaId = rutaActivaId;
-        }
-      } catch (e) {
-        debugPrint('⚠️ Error obteniendo ruta activa: $e');
-      }
-
-      // Crear datos de ubicación
+      // Crear datos de ubicación según estructura del backend
       final locationData = {
         'id_micro': _microId,
         'latitud': position.latitude,
         'longitud': position.longitude,
         'altura': position.altitude,
         'precision': position.accuracy,
-        'bateria': 100.0, // Placeholder
+        'bateria': 100.0,
         'imei': 'flutter-device-$_microId',
         'fuente': 'app_flutter_driver',
-        'id_ruta': rutaId, // CRÍTICO: Siempre incluir ruta
-        'timestamp': DateTime.now().toIso8601String(),
       };
 
       sendLocationUpdate(locationData);
@@ -328,20 +383,18 @@ class TrackingSocketService{
     }
     
     if (_isConnected && socket != null) {
-      // CRÍTICO: Usar evento 'updateLocation' según el backend
+      // Usar evento 'updateLocation' según el backend
       socket?.emit('updateLocation', locationData);
       print('✅ Ubicación enviada al servidor:');
       print('   📍 Lat: ${locationData['latitud']}, Lng: ${locationData['longitud']}');
       print('   🚌 Micro: ${locationData['id_micro']}');
-      print('   🛣️ Ruta: ${locationData['id_ruta']}');
-      print('   📡 Via evento: updateLocation');
+      print('   �� Via evento: updateLocation');
     } else {
       // Guardar en cola si no hay conexión
       _pendingLocations.add(locationData);
       _savePendingLocations();
       print('📦 Ubicación guardada en cola (sin conexión)');
       print('   📊 Total en cola: ${_pendingLocations.length}');
-      print('   🛣️ Ruta: ${locationData['id_ruta']}');
     }
   }
 
@@ -349,7 +402,7 @@ class TrackingSocketService{
     if (!_shouldTrackLocation || _pendingLocations.isEmpty) return;
     
     for (final location in _pendingLocations) {
-      socket?.emit('updateLocation', location);  // CRÍTICO: Cambiar a updateLocation
+      socket?.emit('updateLocation', location);
     }
     print('📤 Enviadas ${_pendingLocations.length} ubicaciones pendientes');
     _pendingLocations.clear();
@@ -358,23 +411,22 @@ class TrackingSocketService{
 
   // Método para que clientes se unan al tracking de una ruta específica
   void joinRouteTracking(String routeId) {
+    print('🛣️ ⭐ INICIANDO unión a tracking de ruta: $routeId');
+    print('🔌 ⭐ Estado del socket: null=${socket == null}, conectado=$_isConnected');
+    
     if (socket != null && _isConnected) {
-      print('🛣️ Intentando unirse al tracking de ruta: $routeId');
-      
-      // CRÍTICO: El backend espera solo el routeId como string, no un objeto
+      // Usar evento 'joinRoute' según el backend desplegado
+      print('🛣️ ⭐ Enviando evento joinRoute...');
       socket?.emit('joinRoute', routeId);
-      print('✅ Evento joinRoute enviado con routeId: $routeId');
+      print('✅ ⭐ Evento joinRoute enviado con routeId: $routeId');
       
     } else {
-      print('❌ No se puede unir a la ruta - socket no conectado');
-      print('🔌 Socket null: ${socket == null}');
-      print('🔌 Conectado: $_isConnected');
+      print('❌ ⭐ ERROR: No se puede unir a la ruta - socket no conectado');
     }
   }
 
   void leaveRouteTracking(String routeId) {
     if (socket != null && _isConnected) {
-      // CRÍTICO: El backend espera solo el routeId como string, no un objeto
       socket?.emit('leaveRoute', routeId);
       print('🚪 Cliente salió del tracking de ruta: $routeId');
     }

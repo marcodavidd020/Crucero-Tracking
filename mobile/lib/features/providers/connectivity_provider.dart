@@ -11,13 +11,27 @@ final connectivityProvider = StreamProvider<ConnectivityResult>((ref) {
   });
 });
 
-// Provider para estado de conexión (boolean)
+// Provider para estado de conexión (boolean) - MEJORADO
 final isOnlineProvider = Provider<bool>((ref) {
   final connectivity = ref.watch(connectivityProvider);
   return connectivity.when(
-    data: (result) => result != ConnectivityResult.none,
-    loading: () => false,
-    error: (error, stack) => false,
+    data: (result) {
+      final hasConnectivity = result != ConnectivityResult.none;
+      
+      // Debug logging
+      print('🔍 Conectividad: $result -> ${hasConnectivity ? "ONLINE" : "OFFLINE"}');
+      
+      return hasConnectivity;
+    },
+    loading: () {
+      print('🔍 Conectividad: LOADING -> asumiendo ONLINE');
+      return true; // Asumir online durante carga para evitar errores falsos
+    },
+    error: (error, stack) {
+      print('🔍 Conectividad: ERROR -> asumiendo ONLINE');
+      print('⚠️ Error de conectividad: $error');
+      return true; // Asumir online en caso de error
+    },
   );
 });
 

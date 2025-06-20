@@ -59,27 +59,27 @@ class MapService {
       
       // CORREGIDO: Diferentes comportamientos para cliente vs chofer
       if (user?.esMicrero == true && user?.microId != null) {
-        // CHOFERES: Requieren conexión para funcionar correctamente
+        // CHOFERES: Intentar inicializar siempre, la conectividad real se verifica en el socket
+        print('🚌 Inicializando tracking para empleado (${user?.nombre})...');
+        print('🚌 MicroID: ${user?.microId}');
+        
         if (!isOnline) {
-          print('⚠️ CHOFER SIN CONEXIÓN: El tracking no funcionará correctamente offline');
-          print('🌐 Los choferes necesitan conexión para enviar ubicación a los clientes');
-          throw Exception('Los choferes requieren conexión a internet para el tracking');
+          print('⚠️ ADVERTENCIA: Verificación de conectividad falló, pero intentando de todos modos...');
+          print('🌐 Si el socket se conecta, significa que sí hay internet real');
         }
         
-        // Inicializar background service solo si hay conexión
+        // Inicializar background service para empleados
         try {
-          print('🔄 Iniciando background service para empleado (${user?.nombre})...');
-          print('🚌 MicroID: ${user?.microId}');
+          print('🔄 Iniciando background service para empleado...');
           final success = await LocationBackgroundService.initializeSafely();
           if (success) {
             print('✅ Background service inicializado correctamente');
           } else {
-            print('⚠️ Background service no pudo inicializarse');
-            throw Exception('Error inicializando servicio de tracking para chofer');
+            print('⚠️ Background service no pudo inicializarse, pero continuando...');
           }
         } catch (e) {
-          print('❌ Error inicializando background service: $e');
-          throw Exception('Error inicializando tracking para chofer: $e');
+          print('⚠️ Error inicializando background service: $e');
+          // No fallar aquí, continuar con el socket principal
         }
       } else {
         // CLIENTES: Pueden funcionar offline perfectamente

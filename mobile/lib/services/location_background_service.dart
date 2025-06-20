@@ -225,20 +225,34 @@ class LocationBackgroundService {
 
   static void emitLocation(Position position) async {
     try {
-      // CRÍTICO: Obtener datos reales del usuario desde SharedPreferences
+      // CRÍTICO: Solo enviar si ya hay datos válidos guardados en el login
       final prefs = await SharedPreferences.getInstance();
-      final microId = prefs.getString('user_micro_id') ?? 'unknown_micro';
-      final userId = prefs.getString('user_id') ?? 'unknown_user';
-      final rutaActivaId = prefs.getString('ruta_activa_id') ?? 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d';
+      final microId = prefs.getString('user_micro_id');
+      final userId = prefs.getString('user_id');
+      
+      // ⚠️ VERIFICAR que el usuario tenga datos válidos
+      if (microId == null || microId == 'unknown_micro' || microId.isEmpty) {
+        // NO mostrar logs si es simplemente que no hay usuario logueado
+        return; // No enviar ubicación si no hay micro válido
+      }
+      
+      if (userId == null || userId == 'unknown_user' || userId.isEmpty) {
+        // NO mostrar logs si es simplemente que no hay usuario logueado
+        return; // No enviar ubicación si no hay usuario válido
+      }
       
       print("LocationBackgroundService: Obteniendo datos del usuario...");
       print("  🚌 MicroId: $microId");
       print("  👤 UserId: $userId");
-      print("  🛣️ Ruta activa: $rutaActivaId");
       
-      // Inicializar socket con datos reales
-      SocketManager.initialize(baseUrlSocket, microId, 'token-auth-$userId');
+      // IMPORTANTE: NO inicializar socket aquí, solo usar si ya existe
+      // El socket debe ser inicializado desde el servicio principal del empleado
+      if (!SocketManager.isConnected) {
+        print("LocationBackgroundService: ⚠️ Socket no conectado, esperando conexión del servicio principal");
+        return;
+      }
 
+      // Crear datos según estructura del backend (sin id_ruta ni timestamp)
       final trackingData = {
         'id_micro': microId,
         'latitud': position.latitude,
@@ -248,16 +262,13 @@ class LocationBackgroundService {
         'bateria': 100.0,
         'imei': 'flutter-device-$userId',
         'fuente': 'app_flutter_background',
-        'id_ruta': rutaActivaId, // Usar ruta activa real
-        'timestamp': DateTime.now().toIso8601String(),
       };
 
       print("LocationBackgroundService: Enviando ubicación background:");
       print("  📍 Lat: ${position.latitude}, Lng: ${position.longitude}");
-      print("  🛣️ Ruta: $rutaActivaId");
       print("  🚌 Micro: $microId");
       
-      await SocketManager.emit('updateLocation', trackingData);
+      SocketManager.emitLocationUpdate(trackingData);
       
     } catch (e) {
       print("LocationBackgroundService: ❌ Error enviando ubicación: $e");

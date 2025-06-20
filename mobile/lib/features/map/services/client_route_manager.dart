@@ -44,21 +44,29 @@ class ClientRouteManager {
     _currentRouteId = routeId; // Guardar para reconexiones
     
     if (_socketInitialized) {
-      print('🔄 Socket ya inicializado, uniéndose a nueva ruta...');
-      _trackingService?.joinRouteTracking(routeId, context);
+      print('🔄 Socket ya inicializado, cambiando a nueva ruta...');
       
-      // También reiniciar el tracking para la nueva ruta
-      startTrackingUpdates();
+      // Salir de la ruta anterior si estaba conectado
+      if (_trackingService?.isConnected == true) {
+        // Dejar la ruta anterior
+        final previousRoute = _currentRouteId;
+        if (previousRoute != null && previousRoute != routeId) {
+          _trackingService!.leaveRouteTracking(previousRoute);
+        }
+        
+        // Unirse a la nueva ruta
+        _trackingService!.joinRouteTracking(routeId, context);
+        
+        // Reiniciar el tracking para la nueva ruta
+        startTrackingUpdates();
+      }
       return;
     }
 
-    print('🚀 Inicializando socket para seguir ruta: $routeId');
+    print('🚀 Inicializando socket cliente para seguir ruta: $routeId');
     
     try {
       _trackingService = ClientTrackingService(ref);
-      
-      // Configurar listener de reconexión ANTES de inicializar
-      _setupReconnectionHandler(context);
       
       await _trackingService!.initializeTracking();
       
@@ -68,35 +76,35 @@ class ClientRouteManager {
       if (_trackingService!.isConnected) {
         await _joinRouteAndStartTracking(routeId, context);
       } else {
-        print('⚠️ Socket no pudo conectarse, reintentando...');
-        // El handler de reconexión se encargará de reintentar
+        print('⚠️ Socket cliente no pudo conectarse, reintentando...');
+        // Reintentar una vez más
+        await Future.delayed(const Duration(seconds: 3));
+        if (_trackingService!.isConnected) {
+          await _joinRouteAndStartTracking(routeId, context);
+        } else {
+          print('❌ No se pudo establecer conexión con el servidor');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('❌ No se pudo conectar al servidor de tracking'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
-      print('❌ Error inicializando tracking: $e');
+      print('❌ Error inicializando tracking cliente: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Error: $e'),
+            content: Text('❌ Error de conexión: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
     }
-  }
-
-  void _setupReconnectionHandler(BuildContext context) {
-    _trackingService?.connectionStatus?.listen((isConnected) async {
-      if (isConnected && _currentRouteId != null && !_socketInitialized) {
-        print('🔄 Socket reconectado, intentando unirse a ruta: $_currentRouteId');
-        
-        // Esperar un momento para que la conexión se estabilice
-        await Future.delayed(const Duration(seconds: 1));
-        
-        if (_trackingService!.isConnected) {
-          await _joinRouteAndStartTracking(_currentRouteId!, context);
-        }
-      }
-    });
   }
 
   Future<void> _joinRouteAndStartTracking(String routeId, BuildContext context) async {
@@ -107,7 +115,7 @@ class ClientRouteManager {
       // Inicializar escucha de actualizaciones después de conectar
       startTrackingUpdates();
       
-      print('✅ Socket inicializado y unido a ruta: $routeId');
+      print('✅ Cliente conectado y unido a ruta: $routeId');
     } catch (e) {
       print('❌ Error uniéndose a la ruta: $e');
     }
@@ -124,9 +132,9 @@ class ClientRouteManager {
           final ruta = rutas.first;
           
           print('🛣️ Ruta seleccionada: ${ruta.nombre} (${ruta.id})');
-          print('🚀 Iniciando socket para tracking de esta ruta...');
+          print('🚀 Conectando cliente al tracking de esta ruta...');
           
-          // Inicializar socket solo cuando se selecciona ruta
+          // Inicializar socket para escuchar la ruta seleccionada
           initializeTrackingForRoute(ruta.id, context);
           
           WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -151,7 +159,7 @@ class ClientRouteManager {
   
   void startTrackingUpdates() {
     if (_trackingService != null && _trackingService!.isConnected) {
-      print('🎧 Iniciando escucha de actualizaciones de tracking...');
+      print('🎧 Cliente iniciando escucha de actualizaciones de micros...');
       print('🔌 Estado del socket: ${_trackingService!.isConnected}');
       
       // Verificar si el stream está disponible
@@ -165,11 +173,12 @@ class ClientRouteManager {
       
       locationStream.listen(
         (data) async {
-          print('📍 RECIBIDA actualización de ubicación desde servidor: $data');
+          print('📍 CLIENTE recibió actualización de micro desde servidor: $data');
           
           try {
-            // Usar el método del mapController en lugar del trackingService
-            await mapController.updateMicroLocationOnMap(data);
+            // Usar el método actualizado del ClientTrackingService
+            final controller = await mapController.mapController.future;
+            await _trackingService!.updateMicroLocationOnMap(controller, data);
           } catch (e) {
             print('❌ Error procesando actualización de ubicación: $e');
           }
@@ -182,7 +191,7 @@ class ClientRouteManager {
         },
       );
       
-      print('✅ Listener de ubicaciones configurado correctamente');
+      print('✅ Listener de ubicaciones de micros configurado correctamente');
     } else {
       print('⚠️ No se puede iniciar tracking - servicio no disponible o desconectado');
       print('🔌 Estado del servicio: $_trackingService');
@@ -207,24 +216,51 @@ class ClientRouteManager {
     return result as bool?;
   }
 
-  Future<void> onRouteCleared() async {
-    _shouldShowRoute = false;
-    await mapController.clearRoute();
-  }
-
-  // ========== CLEANUP ==========
-  
-  void dispose() {
-    print('🧹 Iniciando limpieza del ClientRouteManager');
+  void onRouteCleared() {
+    print('🧹 Limpiando ruta seleccionada...');
     
-    try {
-      _trackingService?.dispose();
-      print('✅ TrackingService limpiado');
-    } catch (e) {
-      print('⚠️ Error limpiando TrackingService: $e');
+    // Dejar de escuchar la ruta actual
+    if (_currentRouteId != null && _trackingService?.isConnected == true) {
+      _trackingService!.leaveRouteTracking(_currentRouteId!);
     }
     
-    print('✅ ClientRouteManager dispose completado');
+    _shouldShowRoute = false;
+    _socketInitialized = false;
+    _currentRouteId = null;
+    
+    // Limpiar marcadores de micros del mapa
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (_trackingService != null) {
+          final controller = await mapController.mapController.future;
+          await _trackingService!.clearAllMarkers(controller);
+        }
+      } catch (e) {
+        print('❌ Error limpiando marcadores: $e');
+      }
+    });
+    
+    mapController.clearRoute();
+    
+    // Invalidar providers para limpiar datos
+    ref.invalidate(entidadIdProvider);
+    ref.invalidate(searchRutasProvider);
+    
+    print('✅ Ruta y tracking limpiados');
+  }
+
+  // ========== DISPOSE ==========
+  
+  void dispose() {
+    print('🧹 Limpiando ClientRouteManager...');
+    
+    // Dejar la ruta actual antes de dispose
+    if (_currentRouteId != null && _trackingService?.isConnected == true) {
+      _trackingService!.leaveRouteTracking(_currentRouteId!);
+    }
+    
+    _trackingService?.dispose();
+    print('✅ ClientRouteManager limpiado');
   }
 
   // ========== GETTERS ==========
