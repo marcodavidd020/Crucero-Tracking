@@ -73,6 +73,26 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
           }
         }
         
+        // NUEVO: Guardar datos del usuario para background service
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('user_id', usuario.id);
+          if (usuario.microId != null) {
+            await prefs.setString('user_micro_id', usuario.microId!);
+          }
+          await prefs.setString('user_type', usuario.tipo);
+          await prefs.setBool('is_logged_in', true);
+          print('💾 Datos del usuario guardados para background service:');
+          print('   👤 User ID: ${usuario.id}');
+          print('   🚌 Micro ID: ${usuario.microId}');
+          print('   📋 Tipo: ${usuario.tipo}');
+        } catch (e) {
+          print('⚠️ Error guardando datos del usuario: $e');
+        }
+        
+        // Guardar usando SharedPreferenceHelper también
+        await SharedPreferenceHelper.setUserLogged(usuario);
+        
         // Guardar el usuario autenticado
         _ref.read(userProvider.notifier).state = usuario;
         

@@ -112,9 +112,15 @@ class TrackingSocketService{
         _isConnected = false;
         _emitEvent(TrackingEventType.connectionStatusChanged, false);
         
-        // Solo reintentar para clientes si la desconexión no fue intencional
-        if (!_shouldTrackLocation && reason != 'io client disconnect') {
+        // MEJORADO: Reconexión más agresiva para empleados (drivers)
+        if (_shouldTrackLocation) {
+          print('🔄 Driver desconectado, programando reconexión inmediata...');
           _scheduleReconnect();
+        } else {
+          // Solo reconectar para clientes si la desconexión no fue intencional
+          if (reason != 'io client disconnect') {
+            _scheduleReconnect();
+          }
         }
       });
 
@@ -149,7 +155,15 @@ class TrackingSocketService{
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+    
+    // Tiempo de reconexión más corto para drivers (empleados)
+    final reconnectDelay = _shouldTrackLocation 
+        ? const Duration(seconds: 3)  // 3 segundos para drivers
+        : const Duration(seconds: 5); // 5 segundos para clientes
+    
+    print('⏱️ Programando reconexión en ${reconnectDelay.inSeconds} segundos...');
+    
+    _reconnectTimer = Timer(reconnectDelay, () {
       if (!_isConnected && socket != null) {
         print('🔄 Reintentando conexión automáticamente...');
         socket?.connect();
@@ -274,6 +288,18 @@ class TrackingSocketService{
         timeLimit: const Duration(seconds: 10),
       );
 
+      // CRÍTICO: Obtener ruta activa SIEMPRE desde SharedPreferences
+      String rutaId = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d'; // Fallback
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final rutaActivaId = prefs.getString('ruta_activa_id');
+        if (rutaActivaId != null && rutaActivaId.isNotEmpty) {
+          rutaId = rutaActivaId;
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error obteniendo ruta activa: $e');
+      }
+
       // Crear datos de ubicación
       final locationData = {
         'id_micro': _microId,
@@ -284,6 +310,7 @@ class TrackingSocketService{
         'bateria': 100.0, // Placeholder
         'imei': 'flutter-device-$_microId',
         'fuente': 'app_flutter_driver',
+        'id_ruta': rutaId, // CRÍTICO: Siempre incluir ruta
         'timestamp': DateTime.now().toIso8601String(),
       };
 

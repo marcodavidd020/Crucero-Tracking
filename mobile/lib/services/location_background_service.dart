@@ -9,6 +9,7 @@ import 'package:flutter_background_service_android/flutter_background_service_an
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LocationBackgroundService {
   static final ON_GPS_LOCATION_UPDATE = "on_gps_location_update";
@@ -126,21 +127,44 @@ class LocationBackgroundService {
     });
   }
 
-  static void emitLocation(Position position){
-    SocketManager.initialize(baseUrlSocket, "microId", "token");
+  static void emitLocation(Position position) async {
+    try {
+      // CRÍTICO: Obtener datos reales del usuario desde SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final microId = prefs.getString('user_micro_id') ?? 'unknown_micro';
+      final userId = prefs.getString('user_id') ?? 'unknown_user';
+      final rutaActivaId = prefs.getString('ruta_activa_id') ?? 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d';
+      
+      print("LocationBackgroundService: Obteniendo datos del usuario...");
+      print("  🚌 MicroId: $microId");
+      print("  👤 UserId: $userId");
+      print("  🛣️ Ruta activa: $rutaActivaId");
+      
+      // Inicializar socket con datos reales
+      SocketManager.initialize(baseUrlSocket, microId, 'token-auth-$userId');
 
-    final trackingData = {
-      'id_micro': "_microId",
-      'latitud': position.latitude,
-      'longitud': position.longitude,
-      'altura': position.altitude,
-      'precision': position.accuracy,
-      'bateria': "100",
-      'imei': 'dispositivo-flutter',
-      'fuente': 'app_flutter',
-    };
+      final trackingData = {
+        'id_micro': microId,
+        'latitud': position.latitude,
+        'longitud': position.longitude,
+        'altura': position.altitude,
+        'precision': position.accuracy,
+        'bateria': 100.0,
+        'imei': 'flutter-device-$userId',
+        'fuente': 'app_flutter_background',
+        'id_ruta': rutaActivaId, // Usar ruta activa real
+        'timestamp': DateTime.now().toIso8601String(),
+      };
 
-    print("intentando enviar ubicaicon background: latitud: ${position.latitude} longitud ${position.longitude} ");
-    SocketManager.emit('updateLocation', trackingData);
+      print("LocationBackgroundService: Enviando ubicación background:");
+      print("  📍 Lat: ${position.latitude}, Lng: ${position.longitude}");
+      print("  🛣️ Ruta: $rutaActivaId");
+      print("  🚌 Micro: $microId");
+      
+      await SocketManager.emit('updateLocation', trackingData);
+      
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error enviando ubicación: $e");
+    }
   }
 }

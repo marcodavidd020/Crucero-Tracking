@@ -3,12 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
-
 import '../providers/map_state_provider.dart';
 import 'location_service.dart';
 import 'enhanced_marker_service.dart';
 import 'route_service.dart';
 import 'socket_service.dart';
+import '../../../services/location_background_service.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class MapService {
   final WidgetRef ref;
@@ -50,6 +51,19 @@ class MapService {
       // Verificar permisos
       if (!await _locationService.checkLocationPermissions()) {
         throw Exception('Permisos de ubicación denegados');
+      }
+      
+      // NUEVO: Inicializar background service para empleados
+      final user = ref.read(userProvider);
+      if (user?.esMicrero == true) {
+        try {
+          final locationBgService = LocationBackgroundService();
+          await locationBgService.initialize();
+          print('🔄 Background service inicializado para empleado');
+        } catch (e) {
+          print('⚠️ Error inicializando background service: $e');
+          // No es crítico, continuar sin background service
+        }
       }
       
       // Inicializar servicios
