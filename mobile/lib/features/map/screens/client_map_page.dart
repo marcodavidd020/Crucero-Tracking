@@ -111,13 +111,16 @@ class _ClientMapState extends ConsumerState<ClientMap> {
 
   static Future<String> initStyle() async {
     try {
-      final file = await copyAssetToFile('assets/maplibre/santa_cruz.mbtiles');
-      String styleFile = await leerArchivoAssets('assets/maplibre/style.json');
-      styleFile = styleFile.replaceAll('___FILE_URI___', 'mbtiles:///${file.path}');
-      return styleFile;
+      // Usar estilo online de MapTiler (recomendado)
+      String primaryStyle = "https://api.maptiler.com/maps/streets-v2/style.json?key=MzhKbzEOi3IDm2v3qyrm";
+      print("🗺️ Cargando estilo del mapa: $primaryStyle");
+      return primaryStyle;
     } catch (e) {
-      print("Error initializing style: $e");
-      return "";
+      print("❌ Error initializing style: $e");
+      // Fallback a un estilo básico de MapLibre si falla
+      String fallbackStyle = "https://demotiles.maplibre.org/style.json";
+      print("🔄 Usando estilo de fallback: $fallbackStyle");
+      return fallbackStyle;
     }
   }
 
@@ -377,10 +380,46 @@ class _ClientMapState extends ConsumerState<ClientMap> {
           }
           
           if (snapshot.hasError) {
-            return Center(child: Text(snapshot.error.toString()));
+            print("❌ Error cargando estilo del mapa: ${snapshot.error}");
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.map_outlined, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Error cargando el mapa",
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Verifique su conexión a internet",
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        // Reintentar cargando el widget
+                      });
+                    },
+                    child: const Text("Reintentar"),
+                  ),
+                ],
+              ),
+            );
           }
           
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text("Cargando mapa..."),
+              ],
+            ),
+          );
         },
       ),
     );
