@@ -18,8 +18,8 @@ class TrackingSocketService{
   factory TrackingSocketService() => _instance;
   TrackingSocketService._internal();
 
-  // Cliente socket
-  late IO.Socket socket;
+  // Cliente socket - ARREGLO: Cambiar de late a nullable
+  IO.Socket? socket;
 
   // Stream controllers para diferentes eventos
   final _eventControllers = <TrackingEventType, StreamController<dynamic>>{};
@@ -45,68 +45,87 @@ class TrackingSocketService{
   }
 
   Future<void> initSocket(String url, String microId, String token, {bool enableLocationTracking = false}) async {
-    _microId = microId;
-    _authToken = token;
-    _shouldTrackLocation = enableLocationTracking; // Configurar si debe trackear
+    try {
+      _microId = microId;
+      _authToken = token;
+      _shouldTrackLocation = enableLocationTracking; // Configurar si debe trackear
 
-    print('🔌 Inicializando socket para tracking...');
-    print('📍 URL: $url/tracking');
-    print('🚌 MicroId: $microId');
-    print('📡 Tracking activo: $_shouldTrackLocation');
+      print('🔌 Inicializando socket para tracking...');
+      print('📍 URL: $url/tracking');
+      print('🚌 MicroId: $microId');
+      print('📡 Tracking activo: $_shouldTrackLocation');
 
-    socket = IO.io('$url/tracking', IO.OptionBuilder()
-        .setTransports(['websocket'])
-        .enableAutoConnect()
-        .enableForceNew()
-        .setAuth({
-          'microId': microId,
-          'token': token
-        })
-        .build()
-    );
-
-    socket.onConnect((_){
-      print('✅ Conexión establecida con el servidor de tracking');
-      _isConnected = true;
-      _emitEvent(TrackingEventType.connectionStatusChanged, true);
-
-      // Enviar ubicaciones pendientes
-      _sendPendingLocations();
-
-      // SOLO iniciar tracking si está habilitado
-      if (_shouldTrackLocation) {
-        print('🚀 Iniciando tracking de ubicación automático');
-        _startLocationTracking();
-      } else {
-        print('👂 Modo escucha activado - NO enviará ubicación propia');
+      // ARREGLO: Limpiar socket anterior si existe
+      if (socket != null) {
+        socket?.disconnect();
+        socket = null;
       }
-    });
 
-    socket.onDisconnect((_) {
-      print('❌ Desconectado del socket de tracking');
+      socket = IO.io('$url/tracking', IO.OptionBuilder()
+          .setTransports(['websocket'])
+          .enableAutoConnect()
+          .enableForceNew()
+          .setAuth({
+            'microId': microId,
+            'token': token
+          })
+          .build()
+      );
+
+      // ARREGLO: Verificar que el socket se creó correctamente
+      if (socket == null) {
+        throw Exception('No se pudo crear el socket');
+      }
+
+      socket?.onConnect((_){
+        print('✅ Conexión establecida con el servidor de tracking');
+        _isConnected = true;
+        _emitEvent(TrackingEventType.connectionStatusChanged, true);
+
+        // Enviar ubicaciones pendientes
+        _sendPendingLocations();
+
+        // SOLO iniciar tracking si está habilitado
+        if (_shouldTrackLocation) {
+          print('🚀 Iniciando tracking de ubicación automático');
+          _startLocationTracking();
+        } else {
+          print('👂 Modo escucha activado - NO enviará ubicación propia');
+        }
+      });
+
+      socket?.onDisconnect((_) {
+        print('❌ Desconectado del socket de tracking');
+        _isConnected = false;
+        _emitEvent(TrackingEventType.connectionStatusChanged, false);
+      });
+
+      socket?.onError((error){
+        print('❌ Error en socket de tracking: $error');
+      });
+
+      socket?.onConnectError((error){
+        print('❌ Error de conexión al socket de tracking: $error');
+      });
+
+      _setupEventListeners();
+      _setupConnectivityMonitoring();
+      await _loadPendingLocations();
+
+      print('✅ Socket de tracking inicializado correctamente');
+      
+    } catch (e) {
+      print('❌ Error al inicializar socket de tracking: $e');
+      socket = null;
       _isConnected = false;
-      _emitEvent(TrackingEventType.connectionStatusChanged, false);
-    });
-
-    socket.onError((error){
-      print('❌ Error en socket de tracking: $error');
-    });
-
-    socket.onConnectError((error){
-      print('❌ Error de conexión al socket de tracking: $error');
-    });
-
-    _setupEventListeners();
-
-    _setupConnectivityMonitoring();
-
-    await _loadPendingLocations();
+      rethrow; // Re-lanzar el error para que el llamador lo maneje
+    }
   }
 
   void _setupEventListeners() {
-    socket.on('locationUpdate', (data) => _emitEvent(TrackingEventType.locationUpdate, data));
-    socket.on('initialTrackingData', (data) => _emitEvent(TrackingEventType.initialTrackingData, data));
-    socket.on('routeLocationUpdate', (data) => _emitEvent(TrackingEventType.routeLocationUpdate, data));
+    socket?.on('locationUpdate', (data) => _emitEvent(TrackingEventType.locationUpdate, data));
+    socket?.on('initialTrackingData', (data) => _emitEvent(TrackingEventType.initialTrackingData, data));
+    socket?.on('routeLocationUpdate', (data) => _emitEvent(TrackingEventType.routeLocationUpdate, data));
   }
 
   void _setupConnectivityMonitoring() {
@@ -117,7 +136,7 @@ class TrackingSocketService{
     if (result != ConnectivityResult.none) {
       // Reconectar socket si hay conexión disponible
       if (!_isConnected) {
-        socket.connect();
+        socket?.connect();
       }
     }
   }
@@ -218,7 +237,7 @@ class TrackingSocketService{
 
   void sendLocationUpdate(Map<String, dynamic> locationData) {
     if (_isConnected) {
-      socket.emit('updateLocation', locationData);
+      socket?.emit('updateLocation', locationData);
       debugPrint('✅ Ubicación enviada vía socket: ${locationData['latitud']}, ${locationData['longitud']}');
     } else {
       // Almacenar para enviar más tarde
@@ -241,7 +260,7 @@ class TrackingSocketService{
     for (var location in pendingCopy) {
       // Quitar el timestamp que agregamos
       location.remove('timestamp');
-      socket.emit('updateLocation', location);
+      socket?.emit('updateLocation', location);
     }
 
     _savePendingLocations();
@@ -250,14 +269,14 @@ class TrackingSocketService{
   // Unirse a una sala de ruta específica
   void joinRoute(String routeId) {
     if (_isConnected) {
-      socket.emit('joinRoute', routeId);
+      socket?.emit('joinRoute', routeId);
     }
   }
 
   // Abandonar una sala de ruta
   void leaveRoute(String routeId) {
     if (_isConnected) {
-      socket.emit('leaveRoute', routeId);
+      socket?.emit('leaveRoute', routeId);
     }
   }
 
@@ -279,7 +298,8 @@ class TrackingSocketService{
   // Cerrar la conexión y liberar recursos
   void dispose() {
     stopLocationTracking();
-    socket.disconnect();
+    socket?.disconnect();
+    socket = null; // NUEVO: Limpiar referencia
 
     _eventControllers.forEach((_, controller) {
       controller.close();

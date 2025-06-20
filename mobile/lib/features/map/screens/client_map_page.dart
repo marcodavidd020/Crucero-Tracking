@@ -274,8 +274,8 @@ class _ClientMapState extends ConsumerState<ClientMap> {
         print('🛣️ Cliente unido a tracking de ruta: $routeId - Ahora recibirá ubicaciones de choferes');
         
         // ARREGLO: Configurar listener una sola vez (evitar múltiples listeners)
-        _trackingService!.socket.off('joinedRoute'); // Remover listener anterior si existe
-        _trackingService!.socket.on('joinedRoute', (data) {
+        _trackingService!.socket?.off('joinedRoute'); // Remover listener anterior si existe
+        _trackingService!.socket?.on('joinedRoute', (data) {
           print('✅ Confirmación de unión a ruta: $data');
           
           // Mostrar feedback al usuario
@@ -302,8 +302,8 @@ class _ClientMapState extends ConsumerState<ClientMap> {
         });
         
         // ARREGLO: También escuchar si hay errores al unirse
-        _trackingService!.socket.off('error');
-        _trackingService!.socket.on('error', (data) {
+        _trackingService!.socket?.off('error');
+        _trackingService!.socket?.on('error', (data) {
           print('❌ Error del socket: $data');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
