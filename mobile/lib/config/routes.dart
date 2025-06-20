@@ -82,11 +82,16 @@ final GoRouter router = GoRouter(
       return null;
     }
     
-    // Si no está autenticado y no está en páginas públicas, ir a login
+    // Si no está autenticado y no está en páginas públicas, ir a home
     if (authState == AuthState.unauthenticated) {
-      final publicRoutes = ['/', '/register', '/user-type-selection'];
-      if (!publicRoutes.contains(state.uri.toString())) {
-        print('🔄 Usuario no autenticado, redirigiendo a login');
+      final currentPath = state.uri.path;
+      final publicPaths = ['/', '/login', '/register'];
+      
+      // Verificar si está en una ruta pública
+      bool isPublicRoute = publicPaths.any((path) => currentPath.startsWith(path));
+      
+      if (!isPublicRoute) {
+        print('🔄 Usuario no autenticado, redirigiendo a home');
         return '/';
       }
     }
