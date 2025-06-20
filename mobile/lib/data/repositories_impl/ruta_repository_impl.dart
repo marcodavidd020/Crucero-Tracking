@@ -131,9 +131,9 @@ class RutaRepositoryImpl implements RutaRepository {
     print("🔍 === OBTENIENDO TODAS LAS RUTAS ===");
     
     try {
-      // 🌐 Intentar obtener desde API primero
+      // 🌐 Intentar obtener desde API primero (ahora usando entidades → rutas)
       try {
-        print("🌐 Intentando obtener rutas desde API...");
+        print("🌐 Intentando obtener rutas desde API (entidades → rutas)...");
         final apiData = await api.fetchAllRutas();
         
         if (apiData.isNotEmpty) {
@@ -149,7 +149,7 @@ class RutaRepositoryImpl implements RutaRepository {
           return apiData.map((model) => model.toEntity()).toList();
         }
       } catch (e) {
-        print("⚠️ Error de API: $e");
+        print("⚠️ Error de API (entidades → rutas): $e");
         print("🔄 Intentando con datos locales...");
       }
       

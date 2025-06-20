@@ -52,7 +52,7 @@
     }
   },
   "sprite": "asset://sprites/sprite",
-  "glyphs": "asset://glyphs/{fontstack}/{range}.pbf",
+  "glyphs": "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
   "layers": [
     {
       "id": "background",

@@ -1,17 +1,9 @@
 import 'dart:async';
-import 'dart:math';
-import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 
-import '../../../config/constants.dart';
-import '../../../services/api_service.dart';
-import '../../../services/tracking_socket_service.dart';
-import '../../auth/providers/auth_provider.dart';
 import '../providers/map_state_provider.dart';
 import 'location_service.dart';
 import 'enhanced_marker_service.dart';

@@ -36,9 +36,10 @@ class TrackingSocketService{
 
   // Timer para enviar ubicación periódicamente
   Timer? _locationTimer;
+  Timer? _reconnectTimer;
 
   // Duración entre actualizaciones de ubicación (en segundos)
-  int _updateInterval = 3; // Reducir a 3 segundos para mejor tiempo real
+  int _updateInterval = 5; // Aumentar a 5 segundos para evitar spam
   set updateInterval(int seconds) {
     _updateInterval = seconds;
     _restartLocationTracking();
@@ -51,9 +52,9 @@ class TrackingSocketService{
       _shouldTrackLocation = enableLocationTracking; // Configurar si debe trackear
 
       print('🔌 Inicializando socket para tracking...');
-      print('📍 URL: $url/tracking');
+      print('📍 URL: $url');
       print('🚌 MicroId: $microId');
-      print('📡 Tracking activo: $_shouldTrackLocation');
+      print('📡 Tracking activo: $_shouldTrackLocation${enableLocationTracking ? "" : " (SOLO ESCUCHA)"}');
 
       // ARREGLO: Limpiar socket anterior si existe
       if (socket != null) {
@@ -61,13 +62,15 @@ class TrackingSocketService{
         socket = null;
       }
 
-      socket = IO.io('$url/tracking', IO.OptionBuilder()
-          .setTransports(['websocket'])
+      // Para clientes, usar configuración más simple y estable
+      socket = IO.io(url, IO.OptionBuilder()
+          .setTransports(['websocket', 'polling']) // Permitir fallback a polling
           .enableAutoConnect()
-          .enableForceNew()
+          .setTimeout(10000) // Timeout de 10 segundos
           .setAuth({
             'microId': microId,
-            'token': token
+            'token': token,
+            'type': enableLocationTracking ? 'driver' : 'client'
           })
           .build()
       );
@@ -81,12 +84,13 @@ class TrackingSocketService{
         print('✅ Conexión establecida con el servidor de tracking');
         _isConnected = true;
         _emitEvent(TrackingEventType.connectionStatusChanged, true);
+        
+        // Cancelar timer de reconexión si existe
+        _reconnectTimer?.cancel();
 
-        // Enviar ubicaciones pendientes
-        _sendPendingLocations();
-
-        // SOLO iniciar tracking si está habilitado
+        // Enviar ubicaciones pendientes solo si es driver
         if (_shouldTrackLocation) {
+          _sendPendingLocations();
           print('🚀 Iniciando tracking de ubicación automático');
           _startLocationTracking();
         } else {
@@ -94,10 +98,15 @@ class TrackingSocketService{
         }
       });
 
-      socket?.onDisconnect((_) {
-        print('❌ Desconectado del socket de tracking');
+      socket?.onDisconnect((reason) {
+        print('❌ Desconectado del socket de tracking: $reason');
         _isConnected = false;
         _emitEvent(TrackingEventType.connectionStatusChanged, false);
+        
+        // Solo reintentar para clientes si la desconexión no fue intencional
+        if (!_shouldTrackLocation && reason != 'io client disconnect') {
+          _scheduleReconnect();
+        }
       });
 
       socket?.onError((error){
@@ -109,8 +118,12 @@ class TrackingSocketService{
       });
 
       _setupEventListeners();
-      _setupConnectivityMonitoring();
-      await _loadPendingLocations();
+      
+      // Solo para drivers
+      if (_shouldTrackLocation) {
+        _setupConnectivityMonitoring();
+        await _loadPendingLocations();
+      }
 
       print('✅ Socket de tracking inicializado correctamente');
       
@@ -120,6 +133,16 @@ class TrackingSocketService{
       _isConnected = false;
       rethrow; // Re-lanzar el error para que el llamador lo maneje
     }
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+      if (!_isConnected && socket != null) {
+        print('🔄 Reintentando conexión automáticamente...');
+        socket?.connect();
+      }
+    });
   }
 
   void _setupEventListeners() {
@@ -133,9 +156,10 @@ class TrackingSocketService{
   }
 
   Future<void> _updateConnectionStatus(List<ConnectivityResult> result) async {
-    if (result != ConnectivityResult.none) {
-      // Reconectar socket si hay conexión disponible
-      if (!_isConnected) {
+    // Solo reconectar si es necesario y no estamos conectados
+    if (result.isNotEmpty && result.first != ConnectivityResult.none) {
+      if (!_isConnected && socket != null) {
+        await Future.delayed(const Duration(seconds: 2));
         socket?.connect();
       }
     }
@@ -166,6 +190,8 @@ class TrackingSocketService{
   }
 
   void _startLocationTracking() {
+    if (!_shouldTrackLocation) return;
+    
     _locationTimer?.cancel();
     _locationTimer = Timer.periodic(Duration(seconds: _updateInterval), (_) {
       _getCurrentLocation();
@@ -173,6 +199,8 @@ class TrackingSocketService{
   }
 
   void _restartLocationTracking() {
+    if (!_shouldTrackLocation) return;
+    
     _locationTimer?.cancel();
     _startLocationTracking();
   }
@@ -182,6 +210,8 @@ class TrackingSocketService{
   }
 
   Future<void> _getCurrentLocation() async {
+    if (!_shouldTrackLocation || !_isConnected) return;
+    
     try {
       // Verificar permisos de ubicación
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -201,109 +231,109 @@ class TrackingSocketService{
         return;
       }
 
-      // Obtener ubicación actual con mejor precisión
+      // Obtener ubicación actual
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10), // Evitar bloqueos largos
+        timeLimit: const Duration(seconds: 10),
       );
-      
-      print('📍 Ubicación obtenida: ${position.latitude}, ${position.longitude} (precisión: ${position.accuracy}m)');
 
-      // Obtener nivel de batería (esto es un ejemplo, necesitarás un plugin adicional)
-      double batteryLevel = 100.0; // Por defecto 100%
-
-      // Crear objeto de tracking optimizado
-      final trackingData = {
+      // Crear datos de ubicación
+      final locationData = {
         'id_micro': _microId,
         'latitud': position.latitude,
         'longitud': position.longitude,
         'altura': position.altitude,
         'precision': position.accuracy,
-        'bateria': batteryLevel,
-        'imei': 'dispositivo-flutter', // Reemplazar con el IMEI real
-        'fuente': 'app_flutter',
-        'velocidad': position.speed, // Agregar velocidad
-        'rumbo': position.heading, // Agregar rumbo/dirección
+        'bateria': 100.0, // Placeholder
+        'imei': 'flutter-device-$_microId',
+        'fuente': 'app_flutter_driver',
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      // Enviar la ubicación
-      sendLocationUpdate(trackingData);
+      sendLocationUpdate(locationData);
 
     } catch (e) {
-      debugPrint('❌ Error al obtener ubicación: $e');
+      debugPrint('Error obteniendo ubicación: $e');
     }
   }
 
   void sendLocationUpdate(Map<String, dynamic> locationData) {
-    if (_isConnected) {
-      socket?.emit('updateLocation', locationData);
-      debugPrint('✅ Ubicación enviada vía socket: ${locationData['latitud']}, ${locationData['longitud']}');
+    if (!_shouldTrackLocation) return;
+    
+    if (_isConnected && socket != null) {
+      socket?.emit('locationUpdate', locationData);
+      debugPrint('✅ Ubicación enviada: ${locationData['latitud']}, ${locationData['longitud']}');
     } else {
-      // Almacenar para enviar más tarde
-      _pendingLocations.add({
-        ...locationData,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
+      // Guardar en cola si no hay conexión
+      _pendingLocations.add(locationData);
       _savePendingLocations();
-      debugPrint('📦 Ubicación almacenada para envío posterior (sin conexión)');
+      debugPrint('📦 Ubicación guardada en cola (sin conexión)');
     }
   }
 
   void _sendPendingLocations() {
-    if (_pendingLocations.isEmpty) return;
-
-    // Enviar ubicaciones pendientes en orden cronológico
-    final pendingCopy = List<Map<String, dynamic>>.from(_pendingLocations);
-    _pendingLocations.clear();
-
-    for (var location in pendingCopy) {
-      // Quitar el timestamp que agregamos
-      location.remove('timestamp');
-      socket?.emit('updateLocation', location);
+    if (!_shouldTrackLocation || _pendingLocations.isEmpty) return;
+    
+    for (final location in _pendingLocations) {
+      socket?.emit('locationUpdate', location);
     }
-
+    debugPrint('📤 Enviadas ${_pendingLocations.length} ubicaciones pendientes');
+    _pendingLocations.clear();
     _savePendingLocations();
   }
 
-  // Unirse a una sala de ruta específica
-  void joinRoute(String routeId) {
-    if (_isConnected) {
-      socket?.emit('joinRoute', routeId);
+  // Método para que clientes se unan al tracking de una ruta específica
+  void joinRouteTracking(String routeId) {
+    if (socket != null && _isConnected) {
+      socket?.emit('joinRoute', {'routeId': routeId});
+      print('🛣️ Cliente unido al tracking de ruta: $routeId');
+    } else {
+      print('❌ No se puede unir a la ruta - socket no conectado');
     }
   }
 
-  // Abandonar una sala de ruta
-  void leaveRoute(String routeId) {
-    if (_isConnected) {
-      socket?.emit('leaveRoute', routeId);
+  void leaveRouteTracking(String routeId) {
+    if (socket != null && _isConnected) {
+      socket?.emit('leaveRoute', {'routeId': routeId});
+      print('🚪 Cliente salió del tracking de ruta: $routeId');
     }
   }
 
-  // Obtener un stream para un tipo de evento específico
-  Stream<dynamic> on(TrackingEventType event) {
-    if (!_eventControllers.containsKey(event)) {
-      _eventControllers[event] = StreamController<dynamic>.broadcast();
+  // Stream getters para escuchar eventos
+  Stream<T> on<T>(TrackingEventType eventType) {
+    if (!_eventControllers.containsKey(eventType)) {
+      _eventControllers[eventType] = StreamController<T>.broadcast();
     }
-    return _eventControllers[event]!.stream;
+    return _eventControllers[eventType]!.stream.cast<T>();
   }
 
-  // Emitir un evento a través del controlador de eventos correspondiente
-  void _emitEvent(TrackingEventType event, dynamic data) {
-    if (_eventControllers.containsKey(event) && !_eventControllers[event]!.isClosed) {
-      _eventControllers[event]!.add(data);
+  void _emitEvent(TrackingEventType eventType, dynamic data) {
+    if (_eventControllers.containsKey(eventType)) {
+      _eventControllers[eventType]!.add(data);
     }
   }
 
-  // Cerrar la conexión y liberar recursos
-  void dispose() {
-    stopLocationTracking();
-    socket?.disconnect();
-    socket = null; // NUEVO: Limpiar referencia
-
-    _eventControllers.forEach((_, controller) {
-      controller.close();
-    });
+  // Método dispose mejorado
+  Future<void> dispose() async {
+    print('🔄 Limpiando TrackingSocketService...');
+    
+    // Cancelar timers
+    _locationTimer?.cancel();
+    _reconnectTimer?.cancel();
+    
+    // Cerrar streams
+    for (final controller in _eventControllers.values) {
+      await controller.close();
+    }
     _eventControllers.clear();
+    
+    // Desconectar socket
+    if (socket != null) {
+      socket?.disconnect();
+      socket = null;
+    }
+    
+    _isConnected = false;
+    print('✅ TrackingSocketService limpiado');
   }
 }

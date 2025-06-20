@@ -12,26 +12,46 @@ class EntidadRepositoryImpl implements EntidadRepository{
 
   @override
   Future<List<Entidad>> getEntidades() async {
-    // 🔄 MODO SOLO LOCAL - No intentar API
-    print("🔄 Obteniendo entidades SOLO desde base de datos local...");
+    print("🔄 Obteniendo entidades desde API...");
     
     try {
-      final localData = await local.getAll();
-      final entities = localData.map((e) => e.toEntity()).toList();
-      print("💾 Entidades locales encontradas: ${entities.length}");
+      // Intentar obtener desde API primero
+      final apiData = await api.fetchEntidades();
+      final entities = apiData.map((e) => e.toEntity()).toList();
       
-      // Mostrar detalles si hay datos
-      if (entities.isNotEmpty) {
-        await local.debugPrintAll();
-      } else {
-        print("⚠️  No hay entidades en la base de datos local");
-        print("💡 Tip: Primero necesitas poblar la BD con datos de prueba");
+      print("✅ Entidades obtenidas desde API: ${entities.length}");
+      
+      // Guardar en cache local para uso offline
+      try {
+        await local.saveAll(apiData);
+        print("💾 Entidades guardadas en cache local");
+      } catch (localError) {
+        print("⚠️ Error guardando en cache local: $localError");
+        // No fallar por error de cache
       }
       
       return entities;
-    } catch (e) {
-      print("❌ Error al obtener datos locales: $e");
-      rethrow;
+      
+    } catch (apiError) {
+      print("❌ Error de API: $apiError");
+      print("🔄 Intentando obtener desde cache local...");
+      
+      try {
+        final localData = await local.getAll();
+        final entities = localData.map((e) => e.toEntity()).toList();
+        
+        if (entities.isNotEmpty) {
+          print("💾 Entidades obtenidas desde cache local: ${entities.length}");
+          return entities;
+        } else {
+          print("⚠️ No hay entidades en cache local");
+          throw Exception('No hay datos disponibles ni en API ni en cache local');
+        }
+        
+      } catch (localError) {
+        print("❌ Error de cache local: $localError");
+        throw Exception('Error obteniendo entidades: API falló ($apiError), Cache local falló ($localError)');
+      }
     }
   }
 

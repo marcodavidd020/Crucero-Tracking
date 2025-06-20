@@ -83,19 +83,19 @@ class AppDrawer extends ConsumerWidget {
                 // Opción de mapa según tipo de usuario
                 ListTile(
                   leading: const Icon(Icons.map, color: Colors.green),
-                  title: Text(currentUser?.tipo == 'cliente' 
+                  title: Text(currentUser?.tipo == 'CLIENTE' 
                       ? 'Ver Mapa Cliente' 
                       : currentUser?.tipo == 'debugger'
                         ? 'Ver Todas las Rutas'
                         : 'Ver Mi Ruta'),
-                  subtitle: Text(currentUser?.tipo == 'cliente'
+                  subtitle: Text(currentUser?.tipo == 'CLIENTE'
                       ? 'Ver ubicación de micros'
                       : currentUser?.tipo == 'debugger'
                         ? 'Modo debug - Ver todo'
                         : 'Ver mi ruta asignada'),
                   onTap: () {
                     Navigator.pop(context);
-                    if (currentUser?.tipo == 'cliente') {
+                    if (currentUser?.tipo == 'CLIENTE') {
                       context.go('/client-map');
                     } else if (currentUser?.tipo == 'debugger') {
                       context.go('/client-map'); // El debugger puede ver todo como cliente
@@ -141,29 +141,16 @@ class AppDrawer extends ConsumerWidget {
                 ),
                   const Divider(),
                 
-                // PARA DESARROLLO: Permite cambiar entre los modos
-                if (currentUser != null && currentUser.tipo == 'debugger')
-                  Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.directions_bus, color: Colors.orange),
-                        title: const Text('Modo Micrero'),
-                        subtitle: const Text('Ver como conductor'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.go('/micrero-dashboard');
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.person, color: Colors.blue),
-                        title: const Text('Modo Cliente'),
-                        subtitle: const Text('Ver como pasajero'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          context.go('/client-map');
-                        },
-                      ),
-                    ],
+                // SOLO MOSTRAR OPCIONES ESPECÍFICAS PARA EMPLEADOS
+                if (currentUser != null && currentUser.tipo == 'EMPLEADO')
+                  ListTile(
+                    leading: const Icon(Icons.dashboard, color: Colors.orange),
+                    title: const Text('Dashboard Micrero'),
+                    subtitle: const Text('Panel de control'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/micrero-dashboard');
+                    },
                   ),
                 
                 const Divider(),

@@ -27,7 +27,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   List<Ruta> _filteredRutas = [];
   
   // 🔄 Control de modo de búsqueda
-  bool _searchingRoutes = true; // Por defecto buscar rutas
+  bool _searchingRoutes = false; // Por defecto buscar ENTIDADES primero
 
 
 
@@ -108,11 +108,44 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
-  // 🚌 Función para guardar entidad (modo legacy)
-  Future<void> _guardarEntidadSeleccionada(BuildContext context, String entidadId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(SharedPreferenceHelper.SELECTED_ENTIDAD_ID, entidadId);
-    context.pop(true);
+  // 🚌 Función para seleccionar entidad y pasar a rutas
+  Future<void> _seleccionarEntidad(BuildContext context, Entidad entidad) async {
+    try {
+      print('🏢 Entidad seleccionada: ${entidad.nombre} (${entidad.id})');
+      
+      // Guardar la entidad seleccionada
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(SharedPreferenceHelper.SELECTED_ENTIDAD_ID, entidad.id);
+      
+      // Mostrar confirmación
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Entidad "${entidad.nombre}" seleccionada'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+        
+        // Cambiar automáticamente a vista de rutas
+        setState(() {
+          _searchingRoutes = true;
+          _searchController.clear();
+        });
+        
+        print('🔄 Cambiando a vista de rutas de ${entidad.nombre}');
+      }
+    } catch (e) {
+      print('❌ Error seleccionando entidad: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -122,22 +155,89 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_searchingRoutes ? "Rutas de Santa Cruz" : "Líneas de Micros"),
+        title: Text(_searchingRoutes ? "🛣️ Seleccionar Ruta" : "🏢 Seleccionar Entidad"),
         actions: [
-          // 🔄 Botón para cambiar entre rutas y entidades
-          IconButton(
-            icon: Icon(_searchingRoutes ? Icons.route : Icons.directions_bus),
-            onPressed: () {
-              setState(() {
-                _searchingRoutes = !_searchingRoutes;
-                _searchController.clear();
-              });
-            },
-            tooltip: _searchingRoutes ? 'Ver Entidades' : 'Ver Rutas',
+          // 🔄 Botón para cambiar entre entidades y rutas
+          if (!_searchingRoutes) // Solo mostrar si estamos en entidades
+            IconButton(
+              icon: const Icon(Icons.route),
+              onPressed: () {
+                setState(() {
+                  _searchingRoutes = true;
+                  _searchController.clear();
+                });
+              },
+              tooltip: 'Ver Todas las Rutas',
+            ),
+          if (_searchingRoutes) // Botón para volver a entidades
+            IconButton(
+              icon: const Icon(Icons.business),
+              onPressed: () {
+                setState(() {
+                  _searchingRoutes = false;
+                  _searchController.clear();
+                });
+              },
+              tooltip: 'Volver a Entidades',
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Banner explicativo del flujo
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _searchingRoutes ? Icons.route : Icons.business,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _searchingRoutes 
+                            ? 'Paso 2: Selecciona la ruta que quieres seguir'
+                            : 'Paso 1: Selecciona la entidad operadora',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (!_searchingRoutes) // Solo mostrar en el paso 1
+                  const SizedBox(height: 4),
+                if (!_searchingRoutes)
+                  Text(
+                    'Después podrás ver las rutas disponibles de esa entidad',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          
+          // Contenido principal
+          Expanded(
+            child: _searchingRoutes ? _buildRoutesView(rutasAsync) : _buildEntitiesView(entidadesAsync),
           ),
         ],
       ),
-      body: _searchingRoutes ? _buildRoutesView(rutasAsync) : _buildEntitiesView(entidadesAsync),
     );
   }
 
@@ -285,9 +385,18 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 itemCount: _filteredEntidades.length,
                 itemBuilder: (_, index) {
                   final entidad = _filteredEntidades[index];
-                  return ListTile(
-                    title: Text(entidad.nombre),
-                    onTap: () => _guardarEntidadSeleccionada(context, entidad.id),
+                  return Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: ListTile(
+                      leading: const Icon(Icons.business, color: Colors.blue),
+                      title: Text(
+                        entidad.nombre,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(entidad.tipo),
+                      trailing: const Icon(Icons.arrow_forward_ios),
+                      onTap: () => _seleccionarEntidad(context, entidad),
+                    ),
                   );
                 },
               ),

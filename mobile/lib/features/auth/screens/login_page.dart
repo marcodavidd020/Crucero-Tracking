@@ -215,36 +215,76 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
               ),
 
-              // Botón de login rápido para chofer
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 16),
-                child: ElevatedButton.icon(
-                  onPressed: isLoading ? null : () {
-                    // Llenar campos automáticamente
-                    _emailController.text = 'marco.chofer@gmail.com';
-                    _passwordController.text = '12345678';
-                    // Ejecutar login automáticamente
-                    Future.delayed(const Duration(milliseconds: 100), () {
-                      _handleLogin();
-                    });
-                  },
-                  icon: const Icon(Icons.flash_on, color: Colors.white),
-                  label: const Text(
-                    '⚡ Login Rápido Chofer',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+              // Botones de login rápido
+              Row(
+                children: [
+                  // Botón de login rápido para chofer
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8, bottom: 16),
+                      child: ElevatedButton.icon(
+                        onPressed: isLoading ? null : () {
+                          // Llenar campos automáticamente
+                          _emailController.text = 'marco.chofer@gmail.com';
+                          _passwordController.text = '12345678';
+                          // Ejecutar login automáticamente
+                          Future.delayed(const Duration(milliseconds: 100), () {
+                            _handleLogin();
+                          });
+                        },
+                        icon: const Icon(Icons.flash_on, color: Colors.white, size: 18),
+                        label: const Text(
+                          '⚡ Chofer',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                  // Botón de login rápido para cliente
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 8, bottom: 16),
+                      child: ElevatedButton.icon(
+                        onPressed: isLoading ? null : () {
+                          // Llenar campos automáticamente
+                          _emailController.text = 'jose.cliente@gmail.com';
+                          _passwordController.text = '12345678';
+                          // Ejecutar login automáticamente
+                          Future.delayed(const Duration(milliseconds: 100), () {
+                            _handleLogin();
+                          });
+                        },
+                        icon: const Icon(Icons.person, color: Colors.white, size: 18),
+                        label: const Text(
+                          '⚡ Cliente',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
 
               // Botón de inicio de sesión
