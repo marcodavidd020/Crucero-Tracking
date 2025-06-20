@@ -91,9 +91,12 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
     }
   }
   Future<void> logout() async {
+    print('🔓 Iniciando proceso de logout...');
+    
+    // Cambiar el estado inmediatamente para evitar problemas de UI
+    state = AuthState.loading;
+    
     try {
-      print('🔓 Iniciando proceso de logout...');
-      
       // 1. Detener servicios de tracking si están activos
       try {
         final trackingService = TrackingSocketService();
@@ -102,22 +105,69 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
         print('✅ Servicios de tracking detenidos');
       } catch (e) {
         print('⚠️ Error deteniendo tracking: $e');
+        // No es crítico si falla
       }
       
-      // 2. Limpiar datos de SharedPreferences
+      // 2. Limpiar datos de SharedPreferences de forma más robusta
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(SharedPreferenceHelper.USER_LOGGED_KEY);
-        await prefs.remove(SharedPreferenceHelper.SELECTED_ENTIDAD_ID);
-        await prefs.remove(SharedPreferenceHelper.RUTA_ID_KEY);
-        await prefs.remove('pendingLocations'); // Limpiar ubicaciones pendientes
-        print('✅ SharedPreferences limpiado');
+        
+        // Lista de todas las claves a limpiar
+        final keysToRemove = [
+          SharedPreferenceHelper.USER_LOGGED_KEY,
+          SharedPreferenceHelper.SELECTED_ENTIDAD_ID,
+          SharedPreferenceHelper.RUTA_ID_KEY,
+          'pendingLocations',
+          'entidad_id',
+          'ruta_activa_id',
+          'ruta_activa_nombre',
+          'user_type',
+          'is_logged_in',
+        ];
+        
+        // Limpiar cada clave
+        for (final key in keysToRemove) {
+          try {
+            await prefs.remove(key);
+          } catch (e) {
+            print('⚠️ Error limpiando clave $key: $e');
+          }
+        }
+        
+        // Limpiar todas las claves que empiecen con ciertos prefijos
+        final allKeys = prefs.getKeys();
+        for (final key in allKeys) {
+          if (key.startsWith('location_') || 
+              key.startsWith('route_') || 
+              key.startsWith('tracking_')) {
+            try {
+              await prefs.remove(key);
+            } catch (e) {
+              print('⚠️ Error limpiando clave prefijo $key: $e');
+            }
+          }
+        }
+        
+        print('✅ SharedPreferences limpiado completamente');
       } catch (e) {
         print('⚠️ Error limpiando SharedPreferences: $e');
+        // Intentar limpiar al menos las claves principales
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear(); // Limpiar todo como último recurso
+          print('✅ SharedPreferences limpiado con clear()');
+        } catch (clearError) {
+          print('❌ Error en clear(): $clearError');
+        }
       }
       
-      // 3. Limpiar el estado del usuario en el provider
-      _ref.read(userProvider.notifier).state = null;
+      // 3. Limpiar el estado del usuario en el provider de forma segura
+      try {
+        _ref.read(userProvider.notifier).state = null;
+        print('✅ Estado de usuario limpiado');
+      } catch (e) {
+        print('⚠️ Error limpiando estado de usuario: $e');
+      }
       
       // 4. Cambiar el estado de autenticación
       state = AuthState.unauthenticated;
@@ -126,9 +176,20 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       
     } catch (e) {
       print('❌ Error durante logout: $e');
-      // Aún así, limpiar el estado básico
-      _ref.read(userProvider.notifier).state = null;
-      state = AuthState.unauthenticated;
+      
+      // Aún así, intentar limpiar el estado básico para no dejar la app en estado inconsistente
+      try {
+        _ref.read(userProvider.notifier).state = null;
+        state = AuthState.unauthenticated;
+        print('✅ Estado básico limpiado después de error');
+      } catch (stateError) {
+        print('❌ Error crítico limpiando estado: $stateError');
+        // Como último recurso, forzar el estado
+        state = AuthState.unauthenticated;
+      }
+      
+      // Re-lanzar el error para que el UI pueda manejarlo
+      rethrow;
     }
   }
 }

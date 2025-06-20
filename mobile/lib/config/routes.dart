@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/screens/user_type_selection_page.dart';
 import '../features/auth/screens/login_page.dart';
@@ -8,6 +9,7 @@ import '../features/map/screens/client_map_page.dart';
 import '../features/map/screens/employee_map_page.dart';
 import '../features/map/screens/micrero_dashboard.dart';
 import '../features/map/screens/search_bus_route.dart';
+import '../features/auth/providers/auth_provider.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: '/',
@@ -67,10 +69,28 @@ final GoRouter router = GoRouter(
     ),
   ],
   
-  // Redirección basada en el tipo de usuario autenticado
+  // Redirección basada en el estado de autenticación
   redirect: (context, state) {
-    // Esta lógica se puede expandir para manejar autenticación
-    // y redireccionar automáticamente según el tipo de usuario
+    // Esta función se ejecuta en cada navegación para verificar autenticación
+    final container = ProviderScope.containerOf(context);
+    final authState = container.read(authStateProvider);
+    
+    print('🔄 Router redirect - Estado actual: $authState, Ruta: ${state.uri}');
+    
+    // Si está en proceso de autenticación (loading), no redirigir
+    if (authState == AuthState.loading) {
+      return null;
+    }
+    
+    // Si no está autenticado y no está en páginas públicas, ir a login
+    if (authState == AuthState.unauthenticated) {
+      final publicRoutes = ['/', '/register', '/user-type-selection'];
+      if (!publicRoutes.contains(state.uri.toString())) {
+        print('🔄 Usuario no autenticado, redirigiendo a login');
+        return '/';
+      }
+    }
+    
     return null;
   },
   
