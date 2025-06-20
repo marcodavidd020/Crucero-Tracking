@@ -53,17 +53,25 @@ class MapService {
         throw Exception('Permisos de ubicación denegados');
       }
       
-      // NUEVO: Inicializar background service para empleados
+      // MEJORADO: Inicializar background service SOLO para empleados/micreros de manera segura
       final user = ref.read(userProvider);
-      if (user?.esMicrero == true) {
+      if (user?.esMicrero == true && user?.microId != null) {
         try {
-          final locationBgService = LocationBackgroundService();
-          await locationBgService.initialize();
-          print('🔄 Background service inicializado para empleado');
+          print('🔄 Iniciando background service para empleado (${user?.nombre})...');
+          print('🚌 MicroID: ${user?.microId}');
+          final success = await LocationBackgroundService.initializeSafely();
+          if (success) {
+            print('✅ Background service inicializado correctamente');
+          } else {
+            print('⚠️ Background service no pudo inicializarse (GPS deshabilitado o sin permisos)');
+            print('💡 El tracking funcionará solo en primer plano');
+          }
         } catch (e) {
           print('⚠️ Error inicializando background service: $e');
-          // No es crítico, continuar sin background service
+          print('💡 Continuando sin background service - tracking solo en primer plano');
         }
+      } else {
+        print('👤 Usuario es cliente o sin microID - no se inicializa background service');
       }
       
       // Inicializar servicios

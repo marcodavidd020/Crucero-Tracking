@@ -18,6 +18,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasOfflineCredentials = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOfflineCredentials();
+  }
+
+  Future<void> _checkOfflineCredentials() async {
+    final authNotifier = ref.read(authStateProvider.notifier);
+    final hasOffline = await authNotifier.hasOfflineCredentials();
+    setState(() {
+      _hasOfflineCredentials = hasOffline;
+    });
+  }
 
   @override
   void dispose() {
@@ -154,6 +169,50 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ],
                 ),
               ),
+
+              // NUEVO: Indicador de modo offline
+              if (_hasOfflineCredentials)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.offline_bolt,
+                        color: Colors.orange.shade700,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Modo Offline Disponible',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade700,
+                              ),
+                            ),
+                            Text(
+                              'Puedes iniciar sesión sin internet usando credenciales guardadas',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               
               // Campo de email
               TextFormField(

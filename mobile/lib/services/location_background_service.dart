@@ -127,6 +127,52 @@ class LocationBackgroundService {
     });
   }
 
+  static void onLocationChanged(Position position) async {
+    try {
+      print("LocationBackgroundService: Ubicación actualizada");
+      print("LocationBackgroundService: latitud: ${position.latitude} longitud: ${position.longitude}");
+
+      final service = FlutterBackgroundService();
+      final isRunning = await service.isRunning();
+      if (isRunning) {
+        service.invoke('setAsForeground');
+      }
+
+      FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      if (service is AndroidServiceInstance) {
+        final androidService = service as AndroidServiceInstance;
+        if (await androidService.isForegroundService()) {
+          print("LocationBackgroundService: Actualizando notificacion");
+          flutterLocalNotificationsPlugin.show(
+            _notificationId,
+            'COOL SERVICE',
+            'Awesome ${DateTime.now()}',
+            const NotificationDetails(
+              android: AndroidNotificationDetails(
+                _notificationChannelId,
+                'MY FOREGROUND SERVICE',
+                icon: 'ic_bg_service_small',
+                ongoing: true,
+              ),
+            ),
+          );
+
+          if (!AppLifecycleObserver.isInForeground.value) {
+            print("LocationBackgroundService: aplicacion en background");
+            emitLocation(position);
+          } else {
+            print("LocationBackgroundService: aplicacion en foreground");
+            emitLocation(position);
+            // SocketManager.disconnect();
+          }
+        }
+      }
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error en onLocationChanged: $e");
+      // No re-lanzar el error para evitar crashes del background service
+    }
+  }
+
   static void emitLocation(Position position) async {
     try {
       // CRÍTICO: Obtener datos reales del usuario desde SharedPreferences
@@ -165,6 +211,74 @@ class LocationBackgroundService {
       
     } catch (e) {
       print("LocationBackgroundService: ❌ Error enviando ubicación: $e");
+      // No re-lanzar el error para evitar crashes del background service
+    }
+  }
+
+  static void stopLocationService() async {
+    try {
+      final service = FlutterBackgroundService();
+      final isRunning = await service.isRunning();
+      if (isRunning) {
+        service.invoke('stopService');
+        print("LocationBackgroundService: Servicio detenido");
+      }
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error deteniendo servicio: $e");
+    }
+  }
+
+  // NUEVO: Verificar si el servicio de ubicación está habilitado
+  static Future<bool> isLocationServiceEnabled() async {
+    try {
+      return await Geolocator.isLocationServiceEnabled();
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error verificando servicio de ubicación: $e");
+      return false;
+    }
+  }
+
+  // NUEVO: Verificar permisos de ubicación
+  static Future<bool> hasLocationPermissions() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      return permission == LocationPermission.whileInUse || 
+             permission == LocationPermission.always;
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error verificando permisos: $e");
+      return false;
+    }
+  }
+
+  // NUEVO: Inicialización segura del background service
+  static Future<bool> initializeSafely() async {
+    try {
+      // Verificar si el servicio de ubicación está habilitado
+      if (!await isLocationServiceEnabled()) {
+        print("LocationBackgroundService: ⚠️ Servicio de ubicación deshabilitado");
+        return false;
+      }
+
+      // Verificar permisos
+      if (!await hasLocationPermissions()) {
+        print("LocationBackgroundService: ⚠️ Sin permisos de ubicación");
+        return false;
+      }
+
+      // Inicializar normalmente si todo está OK
+      final service = LocationBackgroundService();
+      await service.initialize();
+      print("LocationBackgroundService: ✅ Inicializado correctamente");
+      return true;
+      
+    } catch (e) {
+      print("LocationBackgroundService: ❌ Error en inicialización segura: $e");
+      return false;
     }
   }
 }

@@ -14,9 +14,15 @@ import '../features/auth/providers/auth_provider.dart';
 final GoRouter router = GoRouter(
   initialLocation: '/',
   routes: [
-    // Pantalla de selección de tipo de usuario
+    // Pantalla de selección de tipo de usuario (ruta principal)
     GoRoute(
       path: '/',
+      builder: (context, state) => const UserTypeSelectionPage(),
+    ),
+    
+    // Ruta específica para selección de tipo de usuario (para navegación directa)
+    GoRoute(
+      path: '/user-type-selection',
       builder: (context, state) => const UserTypeSelectionPage(),
     ),
     
