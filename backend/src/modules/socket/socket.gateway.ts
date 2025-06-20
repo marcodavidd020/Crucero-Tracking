@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { TrackingService } from '../tracking/tracking.service';
 
 @WebSocketGateway({
   cors: {
@@ -24,16 +25,27 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   private readonly logger = new Logger(SocketGateway.name);
   private readonly connectedClients = new Map<string, Socket>();
+  private readonly trackingClients = new Map<string, { socket: Socket; microId?: string; routeId?: string }>();
+
+  constructor(private readonly trackingService: TrackingService) {}
 
   afterInit(server: Server) {
     this.logger.log('💬 General WebSocket Gateway initialized');
+    this.logger.log('🔌 Tracking functionality integrated');
   }
 
   handleConnection(client: Socket) {
     this.logger.log(`🔗 Client connected: ${client.id}`);
     this.connectedClients.set(client.id, client);
 
-    // Notificar a otros usuarios que alguien se conectó
+    const microId = client.handshake.auth?.microId;
+    const clientType = client.handshake.auth?.type;
+    
+    if (microId) {
+      this.logger.log(`🚌 Tracking client connected - ID: ${client.id}, MicroId: ${microId}, Type: ${clientType}`);
+      this.trackingClients.set(client.id, { socket: client, microId });
+    }
+
     client.broadcast.emit('userJoined', {
       userId: client.id,
       timestamp: new Date().toISOString(),
@@ -45,7 +57,12 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     this.logger.log(`❌ Client disconnected: ${client.id}`);
     this.connectedClients.delete(client.id);
 
-    // Notificar a otros usuarios que alguien se desconectó
+    const trackingClient = this.trackingClients.get(client.id);
+    if (trackingClient?.routeId) {
+      client.leave(`route_${trackingClient.routeId}`);
+    }
+    this.trackingClients.delete(client.id);
+
     client.broadcast.emit('userLeft', {
       userId: client.id,
       timestamp: new Date().toISOString(),
@@ -60,7 +77,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   ) {
     this.logger.log(`📨 Message from ${client.id}: ${data.message}`);
 
-    // Enviar mensaje a todos los clientes conectados
     this.server.emit('messageResponse', {
       ...data,
       userId: client.id,
@@ -82,7 +98,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.join(room);
     this.logger.log(`🏠 Client ${client.id} joined room: ${room}`);
 
-    // Notificar a la sala que alguien se unió
     client.to(room).emit('userJoined', {
       userId: client.id,
       room,
@@ -106,7 +121,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     client.leave(room);
     this.logger.log(`🚪 Client ${client.id} left room: ${room}`);
 
-    // Notificar a la sala que alguien se fue
     client.to(room).emit('userLeft', {
       userId: client.id,
       room,
@@ -129,7 +143,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   ) {
     this.logger.log(`📨 Room message from ${client.id} to room ${data.room}: ${data.message}`);
 
-    // Enviar mensaje solo a los clientes en la sala específica
     this.server.to(data.room).emit('messageResponse', {
       ...data,
       userId: client.id,
@@ -144,7 +157,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     };
   }
 
-  // Método para obtener estadísticas de conexiones
   getConnectionStats() {
     return {
       totalConnections: this.connectedClients.size,
@@ -152,7 +164,6 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     };
   }
 
-  // Método para enviar mensaje desde el servidor
   sendServerMessage(message: string, room?: string) {
     const payload = {
       userId: 'server',
@@ -165,6 +176,126 @@ export class SocketGateway implements OnGatewayInit, OnGatewayConnection, OnGate
       this.server.to(room).emit('messageResponse', payload);
     } else {
       this.server.emit('messageResponse', payload);
+    }
+  }
+
+  @SubscribeMessage('updateLocation')
+  async handleLocationUpdate(
+    @MessageBody() data: any,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      this.logger.log(`📍 Location update from client ${client.id}: ${data.latitud}, ${data.longitud}, Route: ${data.id_ruta}`);
+
+      const savedLocation = await this.trackingService.createLocation(data);
+
+      const clientInfo = this.trackingClients.get(client.id);
+      if (clientInfo) {
+        clientInfo.microId = data.id_micro;
+        this.trackingClients.set(client.id, clientInfo);
+      }
+
+      this.server.emit('locationUpdate', {
+        microId: data.id_micro,
+        location: savedLocation,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (data.id_ruta) {
+        const routeRoomName = `route_${data.id_ruta}`;
+        this.logger.log(`📡 Emitiendo routeLocationUpdate a sala: ${routeRoomName}`);
+        
+        this.server.to(routeRoomName).emit('routeLocationUpdate', {
+          routeId: data.id_ruta,
+          microId: data.id_micro,
+          location: savedLocation,
+          timestamp: new Date().toISOString(),
+        });
+        
+        this.logger.log(`✅ routeLocationUpdate emitido para ruta ${data.id_ruta} a ${this.server.sockets.adapter.rooms.get(routeRoomName)?.size || 0} clientes`);
+      }
+
+      this.logger.log(`📍 Location updated for micro ${data.id_micro}: ${data.latitud}, ${data.longitud}`);
+
+    } catch (error) {
+      this.logger.error(`Error updating location for micro ${data.id_micro}:`, error);
+      client.emit('error', {
+        message: 'Error al actualizar ubicación',
+        error: error.message,
+      });
+    }
+  }
+
+  @SubscribeMessage('joinRoute')
+  async handleJoinRoute(
+    @MessageBody() routeId: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      this.logger.log(`🛣️ Client ${client.id} joining route: ${routeId}`);
+
+      const clientInfo = this.trackingClients.get(client.id);
+      if (clientInfo?.routeId) {
+        const oldRoomName = `route_${clientInfo.routeId}`;
+        client.leave(oldRoomName);
+        this.logger.log(`🚪 Client ${client.id} left previous route room: ${oldRoomName}`);
+      }
+
+      const newRoomName = `route_${routeId}`;
+      client.join(newRoomName);
+      this.logger.log(`✅ Client ${client.id} joined route room: ${newRoomName}`);
+
+      if (clientInfo) {
+        clientInfo.routeId = routeId;
+        this.trackingClients.set(client.id, clientInfo);
+      } else {
+        this.trackingClients.set(client.id, { socket: client, routeId });
+      }
+
+      const recentLocations = await this.trackingService.getLocationsByRoute(routeId, 10);
+
+      client.emit('joinedRoute', {
+        routeId,
+        message: `Unido a la ruta ${routeId}`,
+        recentLocations,
+      });
+
+      const roomSize = this.server.sockets.adapter.rooms.get(newRoomName)?.size || 0;
+      this.logger.log(`🛣️ Client ${client.id} joined route ${routeId} - Room size: ${roomSize}`);
+
+    } catch (error) {
+      this.logger.error(`Error joining route ${routeId}:`, error);
+      client.emit('error', {
+        message: 'Error al unirse a la ruta',
+        error: error.message,
+      });
+    }
+  }
+
+  @SubscribeMessage('leaveRoute')
+  async handleLeaveRoute(
+    @MessageBody() routeId: string,
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const roomName = `route_${routeId}`;
+      client.leave(roomName);
+
+      const clientInfo = this.trackingClients.get(client.id);
+      if (clientInfo) {
+        clientInfo.routeId = undefined;
+        this.trackingClients.set(client.id, clientInfo);
+      }
+
+      client.emit('leftRoute', {
+        routeId,
+        message: `Saliste de la ruta ${routeId}`,
+      });
+
+      this.logger.log(`🚪 Client ${client.id} left route ${routeId}`);
+
+    } catch (error) {
+      this.logger.error(`Error leaving route ${routeId}:`, error);
     }
   }
 } 

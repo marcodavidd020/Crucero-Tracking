@@ -59,10 +59,7 @@ class _ClientMapState extends ConsumerState<ClientMap> {
       _routeManager.handleRouteChange(next, context);
     });
 
-    // Iniciar actualizaciones de tracking si está disponible
-    if (_routeManager.socketInitialized) {
-      _routeManager.startTrackingUpdates();
-    }
+    // El tracking se inicia automáticamente en ClientRouteManager
 
     return Scaffold(
       appBar: AppBar(

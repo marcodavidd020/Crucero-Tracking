@@ -54,7 +54,7 @@ class TrackingSocketService{
       print('🔌 Inicializando socket para tracking...');
       print('📍 URL: $url');
       print('🚌 MicroId: $microId');
-      print('📡 Tracking activo: $_shouldTrackLocation${enableLocationTracking ? "" : " (SOLO ESCUCHA)"}');
+      print('📡 Tracking activo: $_shouldTrackLocation${enableLocationTracking ? " (ENVÍA UBICACIÓN)" : " (SOLO ESCUCHA)"}');
 
       // ARREGLO: Limpiar socket anterior si existe
       if (socket != null) {
@@ -62,11 +62,16 @@ class TrackingSocketService{
         socket = null;
       }
 
-      // Para clientes, usar configuración más simple y estable
-      socket = IO.io(url, IO.OptionBuilder()
+      // CRÍTICO: Usar namespace principal porque /tracking da 404
+      final trackingUrl = url; // Sin /tracking
+      print('📡 Conectando al namespace principal: $trackingUrl');
+      print('📡 Autenticación: microId=$microId, type=${enableLocationTracking ? 'driver' : 'client'}');
+      
+      // Configuración del socket
+      socket = IO.io(trackingUrl, IO.OptionBuilder()
           .setTransports(['websocket', 'polling']) // Permitir fallback a polling
           .enableAutoConnect()
-          .setTimeout(10000) // Timeout de 10 segundos
+          .setTimeout(15000) // Timeout de 15 segundos
           .setAuth({
             'microId': microId,
             'token': token,
@@ -82,6 +87,10 @@ class TrackingSocketService{
 
       socket?.onConnect((_){
         print('✅ Conexión establecida con el servidor de tracking');
+        print('🔗 ID del socket: ${socket?.id}');
+        print('🔗 Namespace: ${socket?.nsp}');
+        print('🔗 Connected: ${socket?.connected}');
+        
         _isConnected = true;
         _emitEvent(TrackingEventType.connectionStatusChanged, true);
         
@@ -111,10 +120,13 @@ class TrackingSocketService{
 
       socket?.onError((error){
         print('❌ Error en socket de tracking: $error');
+        print('❌ Tipo de error: ${error.runtimeType}');
       });
 
       socket?.onConnectError((error){
         print('❌ Error de conexión al socket de tracking: $error');
+        print('❌ Tipo de error de conexión: ${error.runtimeType}');
+        _isConnected = false;
       });
 
       _setupEventListeners();
@@ -146,9 +158,34 @@ class TrackingSocketService{
   }
 
   void _setupEventListeners() {
-    socket?.on('locationUpdate', (data) => _emitEvent(TrackingEventType.locationUpdate, data));
-    socket?.on('initialTrackingData', (data) => _emitEvent(TrackingEventType.initialTrackingData, data));
-    socket?.on('routeLocationUpdate', (data) => _emitEvent(TrackingEventType.routeLocationUpdate, data));
+    // Listener para actualizaciones de ubicación generales
+    socket?.on('locationUpdate', (data) {
+      print('📡 Recibido evento locationUpdate: $data');
+      _emitEvent(TrackingEventType.locationUpdate, data);
+    });
+    
+    // Listener para datos iniciales de tracking
+    socket?.on('initialTrackingData', (data) {
+      print('📡 Recibido evento initialTrackingData: $data');
+      _emitEvent(TrackingEventType.initialTrackingData, data);
+    });
+    
+    // CRÍTICO: Listener para actualizaciones de ruta específica (esto es lo que necesita el cliente)
+    socket?.on('routeLocationUpdate', (data) {
+      print('📍 RECIBIDO evento routeLocationUpdate: $data');
+      print('📍 Tipo de datos: ${data.runtimeType}');
+      print('📍 Contenido: ${data.toString()}');
+      _emitEvent(TrackingEventType.routeLocationUpdate, data);
+    });
+
+    // Listeners para confirmación de unión/salida de rutas
+    socket?.on('joinedRoute', (data) {
+      print('✅ Confirmación del servidor - Unido a ruta: $data');
+    });
+    
+    socket?.on('leftRoute', (data) {
+      print('👋 Confirmación del servidor - Salió de ruta: $data');
+    });
   }
 
   void _setupConnectivityMonitoring() {
@@ -258,16 +295,26 @@ class TrackingSocketService{
   }
 
   void sendLocationUpdate(Map<String, dynamic> locationData) {
-    if (!_shouldTrackLocation) return;
+    if (!_shouldTrackLocation) {
+      print('⚠️ No se puede enviar ubicación - tracking deshabilitado');
+      return;
+    }
     
     if (_isConnected && socket != null) {
-      socket?.emit('locationUpdate', locationData);
-      debugPrint('✅ Ubicación enviada: ${locationData['latitud']}, ${locationData['longitud']}');
+      // CRÍTICO: Usar evento 'updateLocation' según el backend
+      socket?.emit('updateLocation', locationData);
+      print('✅ Ubicación enviada al servidor:');
+      print('   📍 Lat: ${locationData['latitud']}, Lng: ${locationData['longitud']}');
+      print('   🚌 Micro: ${locationData['id_micro']}');
+      print('   🛣️ Ruta: ${locationData['id_ruta']}');
+      print('   📡 Via evento: updateLocation');
     } else {
       // Guardar en cola si no hay conexión
       _pendingLocations.add(locationData);
       _savePendingLocations();
-      debugPrint('📦 Ubicación guardada en cola (sin conexión)');
+      print('📦 Ubicación guardada en cola (sin conexión)');
+      print('   📊 Total en cola: ${_pendingLocations.length}');
+      print('   🛣️ Ruta: ${locationData['id_ruta']}');
     }
   }
 
@@ -275,9 +322,9 @@ class TrackingSocketService{
     if (!_shouldTrackLocation || _pendingLocations.isEmpty) return;
     
     for (final location in _pendingLocations) {
-      socket?.emit('locationUpdate', location);
+      socket?.emit('updateLocation', location);  // CRÍTICO: Cambiar a updateLocation
     }
-    debugPrint('📤 Enviadas ${_pendingLocations.length} ubicaciones pendientes');
+    print('📤 Enviadas ${_pendingLocations.length} ubicaciones pendientes');
     _pendingLocations.clear();
     _savePendingLocations();
   }
@@ -285,16 +332,23 @@ class TrackingSocketService{
   // Método para que clientes se unan al tracking de una ruta específica
   void joinRouteTracking(String routeId) {
     if (socket != null && _isConnected) {
-      socket?.emit('joinRoute', {'routeId': routeId});
-      print('🛣️ Cliente unido al tracking de ruta: $routeId');
+      print('🛣️ Intentando unirse al tracking de ruta: $routeId');
+      
+      // CRÍTICO: El backend espera solo el routeId como string, no un objeto
+      socket?.emit('joinRoute', routeId);
+      print('✅ Evento joinRoute enviado con routeId: $routeId');
+      
     } else {
       print('❌ No se puede unir a la ruta - socket no conectado');
+      print('🔌 Socket null: ${socket == null}');
+      print('🔌 Conectado: $_isConnected');
     }
   }
 
   void leaveRouteTracking(String routeId) {
     if (socket != null && _isConnected) {
-      socket?.emit('leaveRoute', {'routeId': routeId});
+      // CRÍTICO: El backend espera solo el routeId como string, no un objeto
+      socket?.emit('leaveRoute', routeId);
       print('🚪 Cliente salió del tracking de ruta: $routeId');
     }
   }

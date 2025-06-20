@@ -36,7 +36,8 @@ class ClientTrackingService {
       final clientId = 'client-$timestamp';
       
       await trackingService!.initSocket(
-        'http://54.82.231.172:3001',
+        // 'http://54.82.231.172:3001',
+        baseUrlSocket,
         clientId,
         'client-token-$timestamp',
         enableLocationTracking: false // Clientes NO envían ubicación
@@ -185,7 +186,7 @@ class ClientTrackingService {
   bool get isConnected => trackingService?.isConnected ?? false;
   
   Stream<Map<String, dynamic>>? get locationUpdates => 
-      trackingService?.on<Map<String, dynamic>>(TrackingEventType.locationUpdate);
+      trackingService?.on<Map<String, dynamic>>(TrackingEventType.routeLocationUpdate);
       
   Stream<bool>? get connectionStatus => 
       trackingService?.on<bool>(TrackingEventType.connectionStatusChanged);

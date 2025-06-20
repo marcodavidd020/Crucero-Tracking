@@ -187,6 +187,72 @@ class ClientMapController {
 
   // ========== CLEANUP ==========
   
+  // ========== MICRO TRACKING ==========
+  
+  Future<void> updateMicroLocationOnMap(Map<String, dynamic> locationData) async {
+    if (!mapController.isCompleted) return;
+    
+    try {
+      final controller = await mapController.future;
+      
+      // El backend envía routeLocationUpdate con esta estructura:
+      // {routeId: ..., microId: ..., location: {...}, timestamp: ...}
+      final microId = locationData['microId'] ?? locationData['id_micro'];
+      final location = locationData['location'] ?? locationData;
+      
+      // Extraer coordenadas del objeto location o directamente del data
+      final lat = location['latitud']?.toDouble() ?? locationData['latitud']?.toDouble();
+      final lng = location['longitud']?.toDouble() ?? locationData['longitud']?.toDouble();
+      
+      if (lat == null || lng == null) {
+        print('⚠️ Datos de ubicación inválidos: $locationData');
+        return;
+      }
+      
+      print('🚌 Actualizando ubicación del micro $microId: $lat, $lng');
+      
+      // Remover marcador anterior si existe
+      await _removePreviousMarker(controller, microId);
+      
+      // Agregar nuevo marcador
+      await controller.addSymbol(SymbolOptions(
+        geometry: LatLng(lat, lng),
+        iconImage: 'bus-marker',
+        iconSize: 0.8,
+        textField: '🚌',
+        textSize: 20,
+        textColor: '#FFFFFF',
+        textHaloColor: '#FF0000',
+        textHaloWidth: 2,
+        textOffset: const Offset(0, -2),
+      ));
+      
+      print('✅ Marcador actualizado en el mapa');
+      
+    } catch (e) {
+      print('❌ Error actualizando marcador: $e');
+    }
+  }
+
+  Future<void> _removePreviousMarker(
+    MapLibreMapController controller, 
+    String microId
+  ) async {
+    try {
+      // Obtener todos los símbolos y remover los del micro específico
+      final symbols = await controller.symbols;
+      for (final symbol in symbols) {
+        if (symbol.options.textField?.contains('🚌') == true) {
+          await controller.removeSymbol(symbol);
+        }
+      }
+    } catch (e) {
+      print('⚠️ Error removiendo marcador anterior: $e');
+    }
+  }
+
+  // ========== CLEANUP ==========
+  
   void dispose() {
     print('🧹 Iniciando limpieza del ClientMapController');
     
