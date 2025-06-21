@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Test Cliente Socket - Escuchar Coordenadas</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            background: #1a1a1a; 
+            color: #00ff00; 
+            padding: 20px; 
+            line-height: 1.4;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .section { 
+            background: #2a2a2a; 
+            border: 1px solid #00ff00; 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin: 10px 0; 
+        }
+        .button { 
+            background: #00ff00; 
+            color: #000; 
+            border: none; 
+            padding: 8px 15px; 
+            margin: 5px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-weight: bold;
+        }
+        .button:hover { background: #00dd00; }
+        .log { 
+            background: #000; 
+            border: 1px solid #333; 
+            border-radius: 4px; 
+            padding: 10px; 
+            height: 300px; 
+            overflow-y: auto; 
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .status { font-weight: bold; padding: 5px; }
+        .connected { color: #00ff00; }
+        .disconnected { color: #ff0000; }
+        .coords { color: #ffff00; background: #444; padding: 2px 5px; border-radius: 3px; }
+    </style>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Test Cliente Socket - Escuchar Coordenadas</h1>
+        
+        <div class="section">
+            <h3>🎯 Test de Escucha en Tiempo Real</h3>
+            <p><strong>Objetivo:</strong> Verificar si un cliente puede escuchar las coordenadas enviadas por el chofer</p>
+            <p><strong>Ruta monitoreada:</strong> Ruta B (f206dc92-2a2f-4bcf-9a6e-799d6b83033d)</p>
+            <p><strong>Micro ABC123:</strong> b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a</p>
+            
+            <div class="status" id="connectionStatus">❌ Desconectado</div>
+            
+            <button class="button" onclick="connectAsClient()">🔌 Conectar como Cliente</button>
+            <button class="button" onclick="disconnect()">❌ Desconectar</button>
+            <button class="button" onclick="joinRoute()">🛣️ Unirse a Ruta B</button>
+            <button class="button" onclick="clearLog()">🧹 Limpiar Log</button>
+        </div>
+
+        <div class="section">
+            <h3>📍 Últimas Coordenadas Recibidas</h3>
+            <div id="lastCoords">
+                <p>Esperando datos...</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>📨 Log de Eventos</h3>
+            <div class="log" id="eventLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let lastUpdate = null;
+
+        // Credenciales reales del sistema
+        const CREDENTIALS = {
+            microId: 'b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a',
+            token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4ZTY4ZDE2Mi01ZDJmLTRkZDctOWI1Zi03MTgzZDQ0ZDY1MDAiLCJpYXQiOjE3NTA0NjE3NzUsImV4cCI6MTc1MTMyNTc3NX0.-7u5mNBo9HheUJ7XbAAVxisgW5GASNQtTb0CRB6o2W8',
+            routeId: 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d'
+        };
+
+        const SERVER_URL = 'ws://54.82.231.172:3001/tracking';
+
+        function log(message) {
+            const now = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('eventLog');
+            logElement.textContent += `${now} - ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[${now}] ${message}`);
+        }
+
+        function updateStatus(status, isConnected) {
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.textContent = status;
+            statusElement.className = isConnected ? 'status connected' : 'status disconnected';
+        }
+
+        function updateCoords(data) {
+            const coordsElement = document.getElementById('lastCoords');
+            const timestamp = new Date().toLocaleString();
+            
+            coordsElement.innerHTML = `
+                <div class="coords">
+                    <strong>📍 Lat:</strong> ${data.latitud}<br>
+                    <strong>📍 Lng:</strong> ${data.longitud}<br>
+                    <strong>🚌 Micro:</strong> ${data.id_micro}<br>
+                    <strong>⏰ Recibido:</strong> ${timestamp}<br>
+                    <strong>🔋 Batería:</strong> ${data.bateria}%<br>
+                    <strong>📡 Fuente:</strong> ${data.fuente}
+                </div>
+            `;
+            lastUpdate = timestamp;
+        }
+
+        function connectAsClient() {
+            if (socket && socket.connected) {
+                log('⚠️ Ya conectado como cliente');
+                return;
+            }
+
+            log('🔌 Conectando como CLIENTE con credenciales reales...');
+            log(`🔑 MicroId: ${CREDENTIALS.microId}`);
+            log(`🔑 Token: ${CREDENTIALS.token.substring(0, 50)}...`);
+
+            // CRÍTICO: Usar la misma sintaxis que el chofer Flutter
+            // SERVER_URL ya incluye el puerto, solo agregar /tracking
+            const trackingUrl = `http://54.82.231.172:3001/tracking`;
+            log(`📡 URL completa: ${trackingUrl}`);
+            
+            socket = io(trackingUrl, {
+                auth: {
+                    microId: CREDENTIALS.microId,
+                    token: CREDENTIALS.token
+                },
+                transports: ['websocket', 'polling'],
+                timeout: 10000,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 2000
+            });
+
+            setupClientListeners();
+        }
+
+        function setupClientListeners() {
+            if (!socket) return;
+
+            socket.on('connect', () => {
+                log(`✅ Cliente conectado - Socket ID: ${socket.id}`);
+                log(`🔍 Namespace: ${socket.nsp}`);
+                log(`🔍 Connected: ${socket.connected}`);
+                
+                // CRÍTICO: Unirse a la ruta específica
+                log('🛣️ Enviando joinRoute para Ruta B...');
+                socket.emit('joinRoute', ROUTE_ID);
+                log(`🛣️ Evento joinRoute enviado para: ${ROUTE_ID}`);
+            });
+
+            socket.on('disconnect', (reason) => {
+                log(`❌ Cliente desconectado: ${reason}`);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`🔴 Error de conexión: ${error.message}`);
+                log(`🔴 Descripción: ${error.description}`);
+                log(`🔴 Contexto: ${JSON.stringify(error.context)}`);
+            });
+
+            // DATOS INICIALES
+            socket.on('initialTrackingData', (data) => {
+                log(`📦 ⭐ RECIBIDO initialTrackingData: ${JSON.stringify(data).substring(0, 200)}...`);
+                if (Array.isArray(data)) {
+                    log(`📦 ⭐ ${data.length} micros en datos iniciales`);
+                    data.forEach((micro, index) => {
+                        log(`📦 ⭐ Micro ${index + 1}: ${micro.id_micro} - ${micro.latitud}, ${micro.longitud}`);
+                    });
+                    updateInitialData(data);
+                }
+            });
+
+            // EVENTOS EN TIEMPO REAL - CRÍTICOS
+            socket.on('locationUpdate', (data) => {
+                log(`🌍 ⚡ LOCATION UPDATE GENERAL: ${JSON.stringify(data).substring(0, 150)}...`);
+                log(`🔍 microId: ${data?.id_micro}`);
+                log(`🔍 coordenadas: ${data?.latitud}, ${data?.longitud}`);
+                log(`🔍 timestamp: ${data?.updatedAt || 'no timestamp'}`);
+                
+                if (data?.id_micro === CREDENTIALS.microId) {
+                    log(`🎯 ¡UPDATE PARA NUESTRO MICRO!`);
+                    updateRealtimeCoords(data);
+                } else {
+                    log(`📍 Update para otro micro: ${data?.id_micro}`);
+                }
+            });
+
+            socket.on('routeLocationUpdate', (data) => {
+                log(`🛣️ ⚡ ROUTE LOCATION UPDATE: ${JSON.stringify(data).substring(0, 150)}...`);
+                log(`🔍 microId: ${data?.id_micro}`);
+                log(`🔍 coordenadas: ${data?.latitud}, ${data?.longitud}`);
+                log(`🔍 ruta: ${data?.micro?.id_ruta}`);
+                
+                if (data?.id_micro === CREDENTIALS.microId) {
+                    log(`🎯 ¡ROUTE UPDATE PARA NUESTRO MICRO!`);
+                    updateRealtimeCoords(data);
+                } else {
+                    log(`📍 Route update para otro micro: ${data?.id_micro}`);
+                }
+            });
+
+            // CONFIRMACIONES DE UNIÓN A RUTA
+            socket.on('joinedRouteTracking', (data) => {
+                log(`✅ ⭐ CONFIRMACIÓN: Unido al tracking de ruta: ${JSON.stringify(data)}`);
+            });
+
+            socket.on('leftRouteTracking', (data) => {
+                log(`👋 ⭐ CONFIRMACIÓN: Salió del tracking de ruta: ${JSON.stringify(data)}`);
+            });
+
+            // DEBUG: Escuchar TODOS los eventos
+            socket.onAny((eventName, ...args) => {
+                if (!['connect', 'disconnect'].includes(eventName)) {
+                    log(`🔍 EVENTO: ${eventName} - ${JSON.stringify(args).substring(0, 100)}...`);
+                }
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            isConnected = false;
+            updateStatus('❌ Desconectado', false);
+            log('🔌 Desconectado manualmente');
+        }
+
+        function joinRoute() {
+            if (!socket || !isConnected) {
+                log('⚠️ No hay conexión activa');
+                return;
+            }
+
+            log(`🛣️ Uniéndose a ruta: ${CREDENTIALS.routeId}`);
+            socket.emit('joinRoute', CREDENTIALS.routeId);
+            log(`📡 Evento joinRoute enviado`);
+        }
+
+        function clearLog() {
+            document.getElementById('eventLog').textContent = '';
+            log('🧹 Log limpiado');
+        }
+
+        function updateInitialData(data) {
+            const initialDataDiv = document.getElementById('initialData');
+            let html = '<h3>📦 Datos Iniciales (Históricos)</h3>';
+            
+            if (Array.isArray(data) && data.length > 0) {
+                data.forEach(micro => {
+                    const isTarget = micro.id_micro === CREDENTIALS.microId;
+                    const targetClass = isTarget ? 'style="background: #004400; border: 2px solid #00ff00;"' : '';
+                    const targetIcon = isTarget ? '🎯 MONITOREADO' : '';
+                    
+                    html += `
+                        <div ${targetClass} style="margin: 10px 0; padding: 10px; border: 1px solid #333;">
+                            <strong>${micro.micro?.placa || 'N/A'} ${targetIcon}</strong><br>
+                            ID: ${micro.id_micro}<br>
+                            Lat: ${micro.latitud}, Lng: ${micro.longitud}<br>
+                            Última actualización: ${new Date(micro.updatedAt || micro.createdAt).toLocaleString()}<br>
+                            Batería: ${micro.bateria}% | Fuente: ${micro.fuente}
+                        </div>
+                    `;
+                });
+            } else {
+                html += '<p>No hay datos iniciales disponibles</p>';
+            }
+            
+            initialDataDiv.innerHTML = html;
+        }
+
+        function updateRealtimeCoords(data) {
+            const realtimeDiv = document.getElementById('realtimeData');
+            const timestamp = new Date().toLocaleString();
+            
+            const newUpdate = `
+                <div style="margin: 5px 0; padding: 8px; background: #003300; border-left: 3px solid #00ff00;">
+                    <strong>🚌 ${data.micro?.placa || 'ABC123'}</strong> - ${timestamp}<br>
+                    📍 Lat: ${data.latitud}, Lng: ${data.longitud}<br>
+                    🔋 Batería: ${data.bateria}% | 📡 Fuente: ${data.fuente}<br>
+                    🎯 Precisión: ${data.precision}m | 📏 Altura: ${data.altura}m
+                </div>
+            `;
+            
+            // Agregar al inicio para mostrar las más recientes primero
+            realtimeDiv.innerHTML = newUpdate + realtimeDiv.innerHTML;
+            
+            // Mantener solo las últimas 10 actualizaciones
+            const updates = realtimeDiv.children;
+            while (updates.length > 10) {
+                realtimeDiv.removeChild(updates[updates.length - 1]);
+            }
+        }
+
+        // Auto-conectar al cargar la página
+        window.addEventListener('load', () => {
+            log('🚀 Test de cliente iniciado');
+            log('📋 Este test verificará si puede escuchar coordenadas en tiempo real');
+            log('⚡ Presiona "Conectar como Cliente" para empezar');
+        });
+
+        // Heartbeat cada 15 segundos
+        setInterval(() => {
+            if (socket && isConnected) {
+                log(`💓 HEARTBEAT: Cliente conectado - ${new Date().toLocaleTimeString()}`);
+                if (lastUpdate) {
+                    log(`📍 Última actualización: ${lastUpdate}`);
+                }
+            }
+        }, 15000);
+    </script>
+</body>
+</html> 

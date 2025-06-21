@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Test - Cliente Observador de Ruta</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .status { padding: 15px; margin: 10px 0; border-radius: 8px; font-weight: bold; }
+        .connected { background-color: #d4edda; color: #155724; border: 2px solid #28a745; }
+        .disconnected { background-color: #f8d7da; color: #721c24; border: 2px solid #dc3545; }
+        .message { background-color: #fff; padding: 12px; margin: 8px 0; border-left: 4px solid #007bff; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .button { background-color: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; margin: 8px; font-size: 14px; font-weight: bold; }
+        .button:hover { background-color: #0056b3; transform: translateY(-1px); }
+        .button:active { transform: translateY(0); }
+        pre { background-color: #f8f9fa; padding: 15px; border-radius: 6px; overflow-x: auto; border: 1px solid #e9ecef; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .location-item { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px; border-left: 3px solid #28a745; }
+        .route-info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .live-indicator { width: 12px; height: 12px; background: #28a745; border-radius: 50%; display: inline-block; margin-right: 8px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .timestamp { color: #6c757d; font-size: 12px; }
+        .micro-card { border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; margin: 8px 0; background: white; }
+        .coordinates { font-family: monospace; color: #495057; background: #e9ecef; padding: 4px 8px; border-radius: 3px; }
+        .auth-info { background: #e7f3ff; border: 1px solid #bee5eb; padding: 15px; border-radius: 6px; margin: 15px 0; }
+        .valid-token { color: #155724; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Monitor de Ruta en Tiempo Real - Crucero Tracking</h1>
+        
+        <div class="route-info">
+            <h2>📍 Ruta B Monitoreada</h2>
+            <p><strong>ID:</strong> f206dc92-2a2f-4bcf-9a6e-799d6b83033d</p>
+            <p><strong>Micro ABC123:</strong> b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a</p>
+            <div id="liveStatus">🔴 Sin conexión en tiempo real</div>
+        </div>
+        
+        <div class="auth-info">
+            <h3>🔑 Credenciales de Autenticación</h3>
+            <p><strong>Micro ID:</strong> <code>b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a</code></p>
+            <p><strong>Token JWT:</strong> <span class="valid-token">✅ Token válido proporcionado</span></p>
+            <p><small>Estas son las credenciales reales del sistema</small></p>
+        </div>
+        
+        <div id="status" class="status disconnected">🔴 Desconectado del socket</div>
+        
+        <div class="controls">
+            <button class="button" onclick="testServerConnectivity()">🔍 Test Servidor</button>
+            <button class="button" onclick="connectAsObserver()">👁️ Conectar como Observador</button>
+            <button class="button" onclick="connectAsChofer()">🚗 Conectar como Chofer</button>
+            <button class="button" onclick="disconnect()">❌ Desconectar</button>
+            <button class="button" onclick="simulateMovement()">🏃 Simular Movimiento</button>
+            <button class="button" onclick="clearAll()">🧹 Limpiar Todo</button>
+        </div>
+        
+        <div class="grid">
+            <div class="panel">
+                <h3>📦 Datos Iniciales (Históricos)</h3>
+                <div id="initialData">No hay datos iniciales</div>
+            </div>
+            
+            <div class="panel">
+                <h3>⚡ Ubicaciones en Tiempo Real</h3>
+                <div id="liveLocations">Esperando actualizaciones...</div>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h3>📨 Log de Eventos en Tiempo Real</h3>
+            <div id="messages"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let choferMode = false;
+        let locationInterval = null;
+        const RUTA_ID = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d';
+        const MICRO_ID = 'b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a';
+        
+        // Credenciales reales del sistema
+        const VALID_CREDENTIALS = {
+            microId: 'b9dcd6a8-a054-47c1-98a6-9c9dadbc6a2a',
+            token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4ZTY4ZDE2Mi01ZDJmLTRkZDctOWI1Zi03MTgzZDQ0ZDY1MDAiLCJpYXQiOjE3NTA0NjE3NzUsImV4cCI6MTc1MTMyNTc3NX0.-7u5mNBo9HheUJ7XbAAVxisgW5GASNQtTb0CRB6o2W8'
+        };
+
+        const status = document.getElementById('status');
+        const liveStatus = document.getElementById('liveStatus');
+        const messages = document.getElementById('messages');
+        const initialData = document.getElementById('initialData');
+        const liveLocations = document.getElementById('liveLocations');
+
+        function testServerConnectivity() {
+            addMessage('🔍 Probando conectividad básica del servidor...', 'info');
+            
+            // Test 1: Verificar que el servidor Socket.IO responde
+            fetch('http://54.82.231.172:3001/socket.io/?EIO=4&transport=polling')
+                .then(response => {
+                    addMessage('📡 Respuesta del servidor: ' + response.status + ' ' + response.statusText, 
+                        response.ok ? 'success' : 'error');
+                    return response.text();
+                })
+                .then(data => {
+                    addMessage('📦 Datos del handshake: ' + data.substring(0, 100) + '...', 'info');
+                    if (data.includes('sid')) {
+                        addMessage('✅ Servidor Socket.IO está funcionando correctamente', 'success');
+                    } else {
+                        addMessage('❌ Respuesta inesperada del servidor', 'error');
+                    }
+                })
+                .catch(error => {
+                    addMessage('🚨 Error de conectividad: ' + error.message, 'error');
+                    addMessage('❌ El servidor Socket.IO no es accesible', 'error');
+                });
+        }
+
+        function connectAsObserver() {
+            if (socket && socket.connected) {
+                addMessage('⚠️ Ya está conectado');
+                return;
+            }
+
+            choferMode = false;
+            addMessage('👁️ Conectando como OBSERVADOR usando microId real...', 'info');
+            addMessage('🔍 IMPORTANTE: Usará las credenciales reales pero SOLO para observar', 'info');
+
+            // ⚠️ USAR LAS CREDENCIALES REALES PARA OBSERVAR
+            // El backend requiere un microId válido para aceptar la conexión
+            socket = io('http://54.82.231.172:3001/tracking', {
+                auth: VALID_CREDENTIALS  // Usar credenciales reales pero en modo observador
+            });
+
+            setupSocketListeners();
+        }
+
+        function connectAsChofer() {
+            if (socket && socket.connected) {
+                addMessage('⚠️ Ya está conectado');
+                return;
+            }
+
+            choferMode = true;
+            addMessage('🚗 Conectando como CHOFER con credenciales REALES...', 'info');
+            addMessage('🔑 Usando micro ID y JWT token válidos del sistema', 'info');
+
+            // Conectar con las credenciales reales del chofer
+            socket = io('http://54.82.231.172:3001/tracking', {
+                auth: VALID_CREDENTIALS
+            });
+
+            setupSocketListeners();
+        }
+
+        function setupSocketListeners() {
+            // === EVENTOS DE CONEXIÓN ===
+            socket.on('connect', () => {
+                status.textContent = '🟢 Conectado - Socket ID: ' + socket.id;
+                status.className = 'status connected';
+                liveStatus.innerHTML = '<span class="live-indicator"></span>Conectado en tiempo real';
+                
+                if (choferMode) {
+                    addMessage('✅ Conectado como CHOFER con credenciales REALES', 'success');
+                    addMessage('🚗 Listo para enviar ubicaciones del micro ABC123', 'success');
+                } else {
+                    addMessage('✅ Conectado como OBSERVADOR', 'success');
+                    // Unirse a la sala específica de la ruta
+                    socket.emit('joinRoute', RUTA_ID);
+                    addMessage('🛣️ Uniéndose a la sala de Ruta B: ' + RUTA_ID, 'info');
+                }
+            });
+
+            socket.on('disconnect', () => {
+                status.textContent = '🔴 Desconectado';
+                status.className = 'status disconnected';
+                liveStatus.textContent = '🔴 Sin conexión en tiempo real';
+                addMessage('❌ Desconectado del socket', 'error');
+                stopMovementSimulation();
+            });
+
+            socket.on('connect_error', (error) => {
+                status.textContent = '🔴 Error de conexión: ' + error.message;
+                status.className = 'status disconnected';
+                addMessage('🚨 Error de conexión: ' + error.message, 'error');
+                addMessage('🔍 Detalles del error: ' + JSON.stringify(error), 'error');
+                addMessage('🔍 Descripción: ' + (error.description || 'No disponible'), 'error');
+                addMessage('🔍 Contexto: ' + JSON.stringify(error.context || {}), 'error');
+                
+                // Diagnóstico específico según la documentación de Socket.IO
+                if (error.message.includes('xhr poll error')) {
+                    addMessage('❗ Error de polling - Problema de red o servidor', 'error');
+                } else if (error.message.includes('timeout')) {
+                    addMessage('❗ Timeout - El servidor no responde', 'error');
+                } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+                    addMessage('❗ Error 403 - Autenticación rechazada por el servidor', 'error');
+                } else if (error.message.includes('400') || error.message.includes('Bad Request')) {
+                    addMessage('❗ Error 400 - Problema en el handshake o autenticación', 'error');
+                }
+            });
+
+            // === EVENTOS DE TRACKING ===
+            socket.on('initialTrackingData', (data) => {
+                addMessage('📦 Datos iniciales recibidos: ' + data.length + ' micros', 'info');
+                displayInitialData(data);
+            });
+
+            // Evento general para todos los micros
+            socket.on('locationUpdate', (data) => {
+                addMessage('📍 Actualización general: ' + data.micro.placa + ' (' + data.id_micro + ')', 'update');
+                addMessage('📌 Coordenadas: (' + data.latitud + ', ' + data.longitud + ') - Batería: ' + data.bateria + '%', 'coordinate');
+                
+                if (data.id_micro === MICRO_ID) {
+                    updateLiveLocation(data, 'general');
+                }
+            });
+
+            // Evento específico de la ruta
+            socket.on('routeLocationUpdate', (data) => {
+                addMessage('🛣️ Actualización de RUTA: ' + data.micro.placa + ' (' + data.id_micro + ')', 'route');
+                addMessage('📍 Coordenadas: (' + data.latitud + ', ' + data.longitud + ') - Batería: ' + data.bateria + '%', 'coordinate');
+                
+                updateLiveLocation(data, 'route');
+            });
+        }
+
+        function simulateMovement() {
+            if (!socket || !socket.connected) {
+                addMessage('❌ No está conectado', 'error');
+                return;
+            }
+            
+            if (!choferMode) {
+                addMessage('⚠️ Necesitas conectarte como CHOFER para simular movimiento', 'error');
+                return;
+            }
+
+            if (locationInterval) {
+                stopMovementSimulation();
+                return;
+            }
+            
+            addMessage('🚗 Iniciando simulación de movimiento - Enviando ubicaciones cada 3 segundos', 'sent');
+            
+            locationInterval = setInterval(() => {
+                sendRandomLocation();
+            }, 3000);
+        }
+
+        function stopMovementSimulation() {
+            if (locationInterval) {
+                clearInterval(locationInterval);
+                locationInterval = null;
+                addMessage('⏹️ Simulación de movimiento detenida', 'info');
+            }
+        }
+
+        function sendRandomLocation() {
+            if (!socket || !socket.connected || !choferMode) return;
+
+            // Simular movimiento realista (pequeños cambios incrementales)
+            const baseLatitud = -17.7722506;
+            const baseLongitud = -63.1893249;
+            const variation = 0.0005; // ~50 metros de variación
+
+            const testData = {
+                id_micro: MICRO_ID,
+                latitud: baseLatitud + (Math.random() - 0.5) * variation,
+                longitud: baseLongitud + (Math.random() - 0.5) * variation,
+                altura: 420 + Math.random() * 10,
+                precision: Math.floor(Math.random() * 20) + 5,
+                bateria: Math.floor(Math.random() * 30) + 70,
+                imei: '123456789012345',
+                fuente: 'simulacion-html-credenciales-reales'
+            };
+
+            socket.emit('updateLocation', testData);
+            addMessage('📤 Enviada ubicación: (' + testData.latitud.toFixed(6) + ', ' + testData.longitud.toFixed(6) + ')', 'sent');
+        }
+
+        function displayInitialData(data) {
+            let html = '';
+            data.forEach(item => {
+                const isTargetMicro = item.id_micro === MICRO_ID;
+                html += `
+                    <div class="micro-card" style="${isTargetMicro ? 'border-color: #28a745; background-color: #f8fff9;' : ''}">
+                        <strong>${item.micro.placa}</strong> ${isTargetMicro ? '(🎯 MONITOREADO)' : ''}
+                        <br><small>ID: ${item.id_micro}</small>
+                        <br><span class="coordinates">Lat: ${item.latitud}, Lng: ${item.longitud}</span>
+                        <br><span class="timestamp">Última actualización: ${new Date(item.updatedAt).toLocaleString()}</span>
+                        <br>Batería: ${item.bateria}% | Fuente: ${item.fuente}
+                    </div>
+                `;
+            });
+            initialData.innerHTML = html || 'No hay datos iniciales';
+        }
+
+        function updateLiveLocation(data, source) {
+            const timestamp = new Date().toLocaleTimeString();
+            const sourceLabel = source === 'route' ? '🛣️ RUTA' : '📍 GENERAL';
+            
+            liveLocations.innerHTML = `
+                <div class="location-item">
+                    <div><strong>${sourceLabel} - ${data.micro.placa}</strong></div>
+                    <div class="coordinates">Lat: ${data.latitud}, Lng: ${data.longitud}</div>
+                    <div>Batería: ${data.bateria}% | Altura: ${data.altura}m | Precisión: ${data.precision}m</div>
+                    <div>Fuente: ${data.fuente} | IMEI: ${data.imei}</div>
+                    <div class="timestamp">⏰ Recibido: ${timestamp}</div>
+                </div>
+            ` + liveLocations.innerHTML;
+        }
+
+        function disconnect() {
+            stopMovementSimulation();
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        function clearAll() {
+            messages.innerHTML = '';
+            initialData.innerHTML = 'No hay datos iniciales';
+            liveLocations.innerHTML = 'Esperando actualizaciones...';
+        }
+
+        function addMessage(text, type = 'default') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = '<strong>' + new Date().toLocaleTimeString() + '</strong> - ' + text;
+            
+            if (type === 'error') div.style.borderLeftColor = '#dc3545';
+            if (type === 'success') div.style.borderLeftColor = '#28a745';
+            if (type === 'update') div.style.borderLeftColor = '#ffc107';
+            if (type === 'route') div.style.borderLeftColor = '#17a2b8';
+            if (type === 'coordinate') div.style.borderLeftColor = '#6f42c1';
+            if (type === 'sent') div.style.borderLeftColor = '#fd7e14';
+            if (type === 'info') div.style.borderLeftColor = '#6c757d';
+            
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Mantener solo los últimos 50 mensajes
+            while (messages.children.length > 50) {
+                messages.removeChild(messages.firstChild);
+            }
+        }
+
+        // Auto-inicializar
+        window.onload = function() {
+            addMessage('🚀 Monitor actualizado con credenciales REALES del sistema', 'info');
+            addMessage('🔑 JWT Token válido cargado para autenticación', 'success');
+            addMessage('👁️ OBSERVADOR: Modo limitado sin credenciales reales', 'info');
+            addMessage('🚗 CHOFER: Usa credenciales reales del micro ABC123', 'info');
+        };
+    </script>
+</body>
+</html> 

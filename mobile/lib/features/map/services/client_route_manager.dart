@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,18 +47,9 @@ class ClientRouteManager {
     if (_socketInitialized) {
       print('🔄 Socket ya inicializado, cambiando a nueva ruta...');
       
-      // Salir de la ruta anterior si estaba conectado
-      if (_trackingService?.isConnected == true) {
-        // Dejar la ruta anterior
-        final previousRoute = _currentRouteId;
-        if (previousRoute != null && previousRoute != routeId) {
-          _trackingService!.leaveRouteTracking(previousRoute);
-        }
-        
-        // Unirse a la nueva ruta
-        _trackingService!.joinRouteTracking(routeId, context);
-        
-        // Reiniciar el tracking para la nueva ruta
+      // Cambiar a nueva ruta directamente
+      if (_trackingService != null) {
+        await _trackingService!.connectToSpecificRoute(routeId);
         startTrackingUpdates();
       }
       return;
@@ -68,30 +60,39 @@ class ClientRouteManager {
     try {
       _trackingService = ClientTrackingService(ref);
       
+      // Primero preparar el servicio
       await _trackingService!.initializeTracking();
       
-      // Esperar un momento para que la conexión se establezca
+      // Luego conectar a la ruta específica
+      await _trackingService!.connectToSpecificRoute(routeId);
+      
+      // Verificar conexión
       await Future.delayed(const Duration(seconds: 2));
       
       if (_trackingService!.isConnected) {
-        await _joinRouteAndStartTracking(routeId, context);
+        _socketInitialized = true;
+        startTrackingUpdates();
+        print('✅ Cliente conectado y siguiendo ruta: $routeId');
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🛣️ Siguiendo ruta en tiempo real'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       } else {
-        print('⚠️ Socket cliente no pudo conectarse, reintentando...');
-        // Reintentar una vez más
-        await Future.delayed(const Duration(seconds: 3));
-        if (_trackingService!.isConnected) {
-          await _joinRouteAndStartTracking(routeId, context);
-        } else {
-          print('❌ No se pudo establecer conexión con el servidor');
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('❌ No se pudo conectar al servidor de tracking'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
+        print('❌ No se pudo establecer conexión con el servidor');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ No se pudo conectar al servidor'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -104,20 +105,6 @@ class ClientRouteManager {
           ),
         );
       }
-    }
-  }
-
-  Future<void> _joinRouteAndStartTracking(String routeId, BuildContext context) async {
-    try {
-      _trackingService!.joinRouteTracking(routeId, context);
-      _socketInitialized = true;
-      
-      // Inicializar escucha de actualizaciones después de conectar
-      startTrackingUpdates();
-      
-      print('✅ Cliente conectado y unido a ruta: $routeId');
-    } catch (e) {
-      print('❌ Error uniéndose a la ruta: $e');
     }
   }
 
@@ -162,40 +149,104 @@ class ClientRouteManager {
       print('🎧 Cliente iniciando escucha de actualizaciones de micros...');
       print('🔌 Estado del socket: ${_trackingService!.isConnected}');
       
-      // Verificar si el stream está disponible
-      final locationStream = _trackingService!.locationUpdates;
-      if (locationStream == null) {
-        print('❌ Stream de ubicaciones es null');
-        return;
-      }
-      
-      print('✅ Stream de ubicaciones disponible, configurando listener...');
-      
-      locationStream.listen(
-        (data) async {
-          print('📍 CLIENTE recibió actualización de micro desde servidor: $data');
-          
-          try {
-            // Usar el método actualizado del ClientTrackingService
-            final controller = await mapController.mapController.future;
-            await _trackingService!.updateMicroLocationOnMap(controller, data);
-          } catch (e) {
-            print('❌ Error procesando actualización de ubicación: $e');
-          }
-        },
-        onError: (error) {
-          print('❌ Error en stream de ubicaciones: $error');
-        },
-        onDone: () {
-          print('⚠️ Stream de ubicaciones cerrado');
-        },
-      );
+      // Configurar un polling para verificar nuevos datos
+      _startMapUpdatePolling();
       
       print('✅ Listener de ubicaciones de micros configurado correctamente');
     } else {
       print('⚠️ No se puede iniciar tracking - servicio no disponible o desconectado');
       print('🔌 Estado del servicio: $_trackingService');
       print('🔌 Estado de conexión: ${_trackingService?.isConnected}');
+    }
+  }
+
+  void _startMapUpdatePolling() {
+    // Revisar cada 2 segundos si hay nuevas ubicaciones de micros
+    Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (_trackingService == null || !_trackingService!.isConnected) {
+        print('⏸️ Polling pausado - servicio desconectado');
+        timer.cancel();
+        return;
+      }
+      
+      // Obtener ubicaciones de micros procesadas
+      final microLocations = _trackingService!.microLocations;
+      
+      print('🔄 POLLING DE ACTUALIZACIONES:');
+      print('   📊 Micros disponibles: ${microLocations.length}');
+      print('   🚌 IDs: ${microLocations.keys.toList()}');
+      
+      // ⚠️ DEBUGGING: Verificar si son datos estáticos
+      if (microLocations.isNotEmpty) {
+        final firstMicro = microLocations.values.first;
+        final timestamp = firstMicro['timestamp'];
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final ageInSeconds = (now - timestamp) / 1000;
+        
+        print('⚠️ 🚨 ANÁLISIS DE DATOS:');
+        print('   ⏰ Timestamp de datos: $timestamp');
+        print('   ⏰ Timestamp actual: $now');
+        print('   ⏰ Antigüedad: ${ageInSeconds.toStringAsFixed(1)} segundos');
+        
+        if (ageInSeconds > 30) {
+          print('🚨 ⚠️ ALERTA: Los datos tienen más de 30 segundos de antigüedad');
+          print('🚨 ⚠️ Esto indica que NO se están recibiendo eventos en tiempo real');
+          print('🚨 ⚠️ El chofer probablemente NO está enviando ubicaciones');
+        }
+      }
+      
+      if (microLocations.isNotEmpty) {
+        try {
+          final controller = await mapController.mapController.future;
+          
+          // Actualizar marcadores para cada micro
+          for (final entry in microLocations.entries) {
+            final microId = entry.key;
+            final microData = entry.value;
+            final lat = microData['latitud'];
+            final lng = microData['longitud'];
+            
+            print('🎯 Procesando micro $microId:');
+            print('   📍 Coordenadas: ($lat, $lng)');
+            print('   ⏰ Timestamp: ${microData['timestamp']}');
+            
+            await _updateMicroMarkerOnMap(controller, microData);
+          }
+        } catch (e) {
+          print('❌ Error actualizando marcadores: $e');
+        }
+      } else {
+        print('📭 No hay ubicaciones de micros disponibles');
+        print('🚨 ⚠️ POSIBLES CAUSAS:');
+        print('   1. El chofer no está conectado');
+        print('   2. El chofer no ha iniciado el viaje');
+        print('   3. Problema de conexión del socket');
+        print('   4. El microId no coincide con ningún micro activo');
+      }
+    });
+  }
+
+  Future<void> _updateMicroMarkerOnMap(
+    MapLibreMapController controller,
+    Map<String, dynamic> microData
+  ) async {
+    try {
+      final microId = microData['microId']?.toString();
+      final lat = microData['latitud']?.toDouble();
+      final lng = microData['longitud']?.toDouble();
+      final placa = microData['placa']?.toString() ?? microId;
+      
+      if (microId == null || lat == null || lng == null) {
+        return;
+      }
+      
+      print('🗺️ Actualizando marcador: $placa en ($lat, $lng)');
+      
+      // Usar el método del tracking service para actualizar marcadores
+      await _trackingService!.updateMicroLocationOnMap(controller, microData);
+      
+    } catch (e) {
+      print('❌ Error actualizando marcador individual: $e');
     }
   }
 

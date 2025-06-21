@@ -90,6 +90,19 @@ class ClientDebugButtons extends ConsumerWidget {
             child: const Icon(Icons.folder, color: Colors.white),
           ),
         ),
+        
+        // Botón de debug de micros
+        Positioned(
+          top: 320,
+          right: 16,
+          child: FloatingActionButton(
+            mini: true,
+            heroTag: "debug_micros_btn",
+            backgroundColor: Colors.teal,
+            onPressed: () => _debugMicroTracking(context, ref),
+            child: const Icon(Icons.directions_bus, color: Colors.white),
+          ),
+        ),
       ],
     );
   }
@@ -340,6 +353,46 @@ class ClientDebugButtons extends ConsumerWidget {
       
     } catch (e) {
       print('❌ Error al obtener ubicación de BD: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _debugMicroTracking(BuildContext context, WidgetRef ref) async {
+    print('🚌 === DEBUG DE TRACKING DE MICROS ===');
+    
+    try {
+      // Esta función necesitará acceso al ClientTrackingService
+      // Por ahora, mostrar información básica
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🚌 Debug de micros - Revisa la consola para detalles'),
+            backgroundColor: Colors.teal,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      
+      // TODO: Implementar acceso al ClientTrackingService para:
+      // - Mostrar estado de conexión del socket
+      // - Mostrar micros en memoria
+      // - Forzar actualización de datos
+      // - Mostrar antigüedad de los datos
+      
+      print('🚌 Esta función necesita ser conectada con ClientTrackingService');
+      print('🚌 Para implementación completa, se necesita pasar el servicio como parámetro');
+      
+    } catch (e) {
+      print('❌ Error en debug de micros: $e');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
