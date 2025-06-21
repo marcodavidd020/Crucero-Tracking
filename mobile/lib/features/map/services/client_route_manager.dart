@@ -161,10 +161,12 @@ class ClientRouteManager {
   }
 
   void _startMapUpdatePolling() {
-    // Revisar cada 2 segundos si hay nuevas ubicaciones de micros
-    Timer.periodic(const Duration(seconds: 2), (timer) async {
+    // Configurar el controller del mapa en el tracking service (UNA SOLA VEZ)
+    _setupMapController();
+    
+    // Revisar cada 3 segundos si hay nuevas ubicaciones de micros (menos frecuente para reducir carga)
+    Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (_trackingService == null || !_trackingService!.isConnected) {
-        print('⏸️ Polling pausado - servicio desconectado');
         timer.cancel();
         return;
       }
@@ -172,83 +174,48 @@ class ClientRouteManager {
       // Obtener ubicaciones de micros procesadas
       final microLocations = _trackingService!.microLocations;
       
-      print('🔄 POLLING DE ACTUALIZACIONES:');
-      print('   📊 Micros disponibles: ${microLocations.length}');
-      print('   🚌 IDs: ${microLocations.keys.toList()}');
-      
-      // ⚠️ DEBUGGING: Verificar si son datos estáticos
-      if (microLocations.isNotEmpty) {
-        final firstMicro = microLocations.values.first;
-        final timestamp = firstMicro['timestamp'];
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final ageInSeconds = (now - timestamp) / 1000;
+      // Log minimal cada 10 ciclos (cada 30 segundos)
+      if (timer.tick % 10 == 0) {
+        print('🔄 Polling: ${microLocations.length} micros');
         
-        print('⚠️ 🚨 ANÁLISIS DE DATOS:');
-        print('   ⏰ Timestamp de datos: $timestamp');
-        print('   ⏰ Timestamp actual: $now');
-        print('   ⏰ Antigüedad: ${ageInSeconds.toStringAsFixed(1)} segundos');
-        
-        if (ageInSeconds > 30) {
-          print('🚨 ⚠️ ALERTA: Los datos tienen más de 30 segundos de antigüedad');
-          print('🚨 ⚠️ Esto indica que NO se están recibiendo eventos en tiempo real');
-          print('🚨 ⚠️ El chofer probablemente NO está enviando ubicaciones');
+        if (microLocations.isNotEmpty) {
+          final firstMicro = microLocations.values.first;
+          final timestamp = firstMicro['timestamp'];
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final ageInSeconds = (now - timestamp) / 1000;
+          
+          if (ageInSeconds > 30) {
+            print('⚠️ Datos antiguos (${ageInSeconds.toStringAsFixed(0)}s)');
+          }
         }
       }
       
+      // Solo triggers updates - el batch processing maneja la eficiencia
       if (microLocations.isNotEmpty) {
-        try {
-          final controller = await mapController.mapController.future;
-          
-          // Actualizar marcadores para cada micro
-          for (final entry in microLocations.entries) {
-            final microId = entry.key;
-            final microData = entry.value;
-            final lat = microData['latitud'];
-            final lng = microData['longitud'];
-            
-            print('🎯 Procesando micro $microId:');
-            print('   📍 Coordenadas: ($lat, $lng)');
-            print('   ⏰ Timestamp: ${microData['timestamp']}');
-            
-            await _updateMicroMarkerOnMap(controller, microData);
-          }
-        } catch (e) {
-          print('❌ Error actualizando marcadores: $e');
-        }
-      } else {
-        print('📭 No hay ubicaciones de micros disponibles');
-        print('🚨 ⚠️ POSIBLES CAUSAS:');
-        print('   1. El chofer no está conectado');
-        print('   2. El chofer no ha iniciado el viaje');
-        print('   3. Problema de conexión del socket');
-        print('   4. El microId no coincide con ningún micro activo');
+        _batchUpdateMarkers(microLocations);
       }
     });
   }
-
-  Future<void> _updateMicroMarkerOnMap(
-    MapLibreMapController controller,
-    Map<String, dynamic> microData
-  ) async {
+  
+  Future<void> _setupMapController() async {
     try {
-      final microId = microData['microId']?.toString();
-      final lat = microData['latitud']?.toDouble();
-      final lng = microData['longitud']?.toDouble();
-      final placa = microData['placa']?.toString() ?? microId;
-      
-      if (microId == null || lat == null || lng == null) {
-        return;
-      }
-      
-      print('🗺️ Actualizando marcador: $placa en ($lat, $lng)');
-      
-      // Usar el método del tracking service para actualizar marcadores
-      await _trackingService!.updateMicroLocationOnMap(controller, microData);
-      
+      final controller = await mapController.mapController.future;
+      _trackingService?.setMapController(controller);
+      print('✅ Map controller configurado en tracking service');
     } catch (e) {
-      print('❌ Error actualizando marcador individual: $e');
+      print('❌ Error configurando map controller: $e');
     }
   }
+  
+  void _batchUpdateMarkers(Map<String, Map<String, dynamic>> microLocations) {
+    // Usar el nuevo sistema optimizado que maneja batch processing
+    for (final entry in microLocations.entries) {
+      final microData = entry.value;
+      _trackingService?.updateMicroLocationOnMap(null, microData); // controller se maneja internamente
+    }
+  }
+
+
 
   // ========== USER ACTIONS ==========
   

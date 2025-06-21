@@ -13,20 +13,31 @@ class ClientTrackingService {
   TrackingSocketService? trackingService;
   bool _mounted = true;
   Timer? _connectionCheckTimer;
+  Timer? _updateThrottleTimer;  // Nuevo: Timer para throttling
+  Timer? _mapUpdateTimer;  // Nuevo: Timer específico para actualizaciones de mapa
   final Map<String, Symbol> _microMarkers = {};
   final Map<String, Map<String, dynamic>> _microLocations = {};
+  final Map<String, Map<String, dynamic>> _pendingUpdates = {};  // Nuevo: Para almacenar updates pendientes
+  final Map<String, DateTime> _lastMarkerUpdate = {};  // Nuevo: Control de última actualización de marcadores
   Map<String, dynamic>? _lastLocationData;
   String? _selectedRouteId;
   StreamSubscription? _locationSubscription;
   StreamSubscription? _locationUpdateSubscription;
   StreamSubscription? _routeLocationSubscription;
   StreamSubscription? _connectionSubscription;
+  DateTime? _lastProcessTime;  // Nuevo: Para controlar tiempo de último procesamiento
+  MapLibreMapController? _currentController;  // Nuevo: Referencia al controller del mapa
+  bool _isUpdatingMarkers = false;  // Nuevo: Flag para evitar updates simultáneos
+  static const Duration _updateThrottleDuration = Duration(seconds: 2);  // Nuevo: Throttle de 2 segundos
+  static const Duration _markerUpdateThrottle = Duration(milliseconds: 500);  // Nuevo: Throttle específico para marcadores
 
   ClientTrackingService(this.ref);
 
   void dispose() {
     _mounted = false;
     _connectionCheckTimer?.cancel();
+    _updateThrottleTimer?.cancel();  // Nuevo: Cancelar timer de throttling
+    _mapUpdateTimer?.cancel();  // Nuevo: Cancelar timer de mapa
     _locationSubscription?.cancel();
     _locationUpdateSubscription?.cancel();
     _routeLocationSubscription?.cancel();
@@ -90,6 +101,12 @@ class ClientTrackingService {
   void _setupSocketListeners() {
     if (trackingService == null) return;
     
+    // Cancelar listeners existentes para evitar duplicados
+    _locationSubscription?.cancel();
+    _locationUpdateSubscription?.cancel();
+    _routeLocationSubscription?.cancel();
+    _connectionSubscription?.cancel();
+    
     // 1. Escuchar datos iniciales de tracking
     _locationSubscription = trackingService!
         .on<List<dynamic>>(TrackingEventType.initialTrackingData)
@@ -103,12 +120,12 @@ class ClientTrackingService {
           },
         );
     
-    // 2. Escuchar actualizaciones de ubicación en tiempo real
+    // 2. Escuchar actualizaciones de ubicación en tiempo real (UNIFICADO)
     _locationUpdateSubscription = trackingService!
         .on<Map<String, dynamic>>(TrackingEventType.locationUpdate)
         .listen(
           (data) {
-            print('📍 CLIENTE recibió actualización: $data');
+            // Log mínimo para evitar spam
             _handleLocationUpdate(data);
           },
           onError: (error) {
@@ -116,16 +133,12 @@ class ClientTrackingService {
           },
         );
     
-    // 3. Escuchar actualizaciones específicas de ruta (si las hay)
+    // 3. Escuchar actualizaciones específicas de ruta
     _routeLocationSubscription = trackingService!
         .on<Map<String, dynamic>>(TrackingEventType.routeLocationUpdate)
         .listen(
           (data) {
-            print('🎉 ⭐ CLIENTE RECIBIÓ routeLocationUpdate: $data');
-            print('🎉 ⭐ Timestamp del cliente: ${DateTime.now().millisecondsSinceEpoch}');
-            print('🎉 ⭐ Estructura de datos: ${data.keys.toList()}');
-            print('🎉 ⭐ Coordenadas: lat=${data['latitud']}, lng=${data['longitud']}');
-            print('🎉 ⭐ PROCESANDO DATOS EN TIEMPO REAL...');
+            // Log mínimo para evitar spam
             _handleRouteLocationUpdate(data);
           },
           onError: (error) {
@@ -136,22 +149,7 @@ class ClientTrackingService {
           },
         );
 
-    // 4. NUEVO: También escuchar locationUpdate general
-    trackingService!
-        .on<Map<String, dynamic>>(TrackingEventType.locationUpdate)
-        .listen(
-          (data) {
-            print('🌍 ⭐ CLIENTE RECIBIÓ locationUpdate GENERAL: $data');
-            print('🌍 ⭐ Timestamp del cliente: ${DateTime.now().millisecondsSinceEpoch}');
-            print('🌍 ⭐ PROCESANDO COMO ACTUALIZACIÓN DE RUTA...');
-            _handleLocationUpdate(data);
-          },
-          onError: (error) {
-            print('❌ Error en stream de ubicaciones generales: $error');
-          },
-        );
-
-    // Escuchar cambios de estado de conexión
+    // 4. Escuchar cambios de estado de conexión
     _connectionSubscription = trackingService!
         .on<bool>(TrackingEventType.connectionStatusChanged)
         .listen(
@@ -187,13 +185,60 @@ class ClientTrackingService {
   }
 
   void _handleLocationUpdate(Map<String, dynamic> data) {
-    print('🎯 Procesando actualización de ubicación en tiempo real');
-    _processTrackingLocation(data);
+    // Solo log minimal para evitar spam
+    final microId = data['id_micro']?.toString();
+    print('📍 Update recibido: $microId');
+    _queueLocationUpdate(data);
   }
 
   void _handleRouteLocationUpdate(Map<String, dynamic> data) {
-    print('🎯 Procesando actualización de ubicación de ruta específica');
-    _processTrackingLocation(data);
+    // Solo log minimal para evitar spam
+    final microId = data['id_micro']?.toString();
+    print('🛣️ Route update recibido: $microId');
+    _queueLocationUpdate(data);
+  }
+
+  // Nuevo método para encolar updates y procesarlos con throttling
+  void _queueLocationUpdate(Map<String, dynamic> data) {
+    if (!_mounted) return;
+    
+    final microId = data['id_micro']?.toString();
+    if (microId == null) return;
+    
+    // Almacenar el update más reciente para cada micro
+    _pendingUpdates[microId] = data;
+    
+    // Iniciar o reiniciar el timer de throttling
+    _updateThrottleTimer?.cancel();
+    _updateThrottleTimer = Timer(_updateThrottleDuration, () {
+      _processPendingUpdates();
+    });
+  }
+
+  // Nuevo método para procesar updates acumulados
+  void _processPendingUpdates() {
+    if (!_mounted || _pendingUpdates.isEmpty) return;
+    
+    final now = DateTime.now();
+    
+    // Solo procesar si han pasado al menos 2 segundos desde el último procesamiento
+    if (_lastProcessTime != null && 
+        now.difference(_lastProcessTime!) < _updateThrottleDuration) {
+      return;
+    }
+    
+    print('🔄 Procesando ${_pendingUpdates.length} updates acumulados...');
+    
+    // Procesar todos los updates pendientes
+    for (final entry in _pendingUpdates.entries) {
+      _processTrackingLocationThrottled(entry.value);
+    }
+    
+    // Limpiar updates pendientes y actualizar timestamp
+    _pendingUpdates.clear();
+    _lastProcessTime = now;
+    
+    print('✅ Updates procesados');
   }
 
   void _processTrackingLocation(Map<String, dynamic> trackingData) {
@@ -250,6 +295,48 @@ class ClientTrackingService {
     }
   }
 
+  // Versión optimizada para throttling (menos logs)
+  void _processTrackingLocationThrottled(Map<String, dynamic> trackingData) {
+    try {
+      final microId = trackingData['id_micro']?.toString() ?? 
+                      trackingData['idMicro']?.toString() ?? 
+                      trackingData['microId']?.toString();
+      
+      final lat = trackingData['latitud']?.toDouble();
+      final lng = trackingData['longitud']?.toDouble();
+      final micro = trackingData['micro'];
+      
+      if (microId == null || lat == null || lng == null) {
+        print('⚠️ Datos incompletos para $microId');
+        return;
+      }
+      
+      final placa = micro?['placa'] ?? microId;
+      final color = micro?['color'] ?? '#FF0000';
+      
+      // Log mínimo - solo lo esencial
+      print('📍 Procesando $placa: ($lat, $lng)');
+      
+      final processedData = {
+        'microId': microId,
+        'placa': placa,
+        'color': color,
+        'latitud': lat,
+        'longitud': lng,
+        'location': {
+          'latitud': lat,
+          'longitud': lng,
+        },
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      };
+      
+      _notifyLocationUpdateThrottled(processedData);
+      
+    } catch (e) {
+      print('❌ Error en throttled update: $e');
+    }
+  }
+
   void _notifyLocationUpdate(Map<String, dynamic> processedData) {
     // Este método será llamado desde ClientRouteManager para actualizar el mapa
     final microId = processedData['microId'];
@@ -294,6 +381,32 @@ class ClientTrackingService {
     _microLocations[microId] = processedData;
     print('✅ Datos almacenados en _microLocations[$microId]');
     print('📊 Total micros en memoria: ${_microLocations.length}');
+  }
+
+  // Versión optimizada para throttling (menos logs, más eficiente)
+  void _notifyLocationUpdateThrottled(Map<String, dynamic> processedData) {
+    final microId = processedData['microId'];
+    final lat = processedData['latitud'];
+    final lng = processedData['longitud'];
+    
+    // Verificar si hay cambio real en las coordenadas (sin logs verbosos)
+    final previousData = _microLocations[microId];
+    if (previousData != null) {
+      final prevLat = previousData['latitud'];
+      final prevLng = previousData['longitud'];
+      
+      // Solo actualizar si las coordenadas cambiaron significativamente
+      final latDiff = (prevLat - lat).abs();
+      final lngDiff = (prevLng - lng).abs();
+      
+      if (latDiff > 0.0001 || lngDiff > 0.0001) {  // Filtro de cambio mínimo
+        _microLocations[microId] = processedData;
+        print('📍 ${processedData['placa']}: Actualizado');
+      }
+    } else {
+      _microLocations[microId] = processedData;
+      print('📍 ${processedData['placa']}: Primera ubicación');
+    }
   }
 
   // NUEVO: Método para notificar actualizaciones inmediatas al mapa
@@ -451,41 +564,129 @@ class ClientTrackingService {
     }
   }
 
-  // ========== ACTUALIZACIÓN DE MARCADORES ==========
+  // ========== ACTUALIZACIÓN DE MARCADORES OPTIMIZADA ==========
+  
+  void setMapController(MapLibreMapController controller) {
+    _currentController = controller;
+  }
   
   Future<void> updateMicroLocationOnMap(
-    MapLibreMapController controller, 
+    MapLibreMapController? controller, 
     Map<String, dynamic> locationData
   ) async {
+    if (!_mounted || _isUpdatingMarkers) return;
+    
+    final microId = locationData['microId']?.toString();
+    if (microId == null) return;
+    
+    // Throttling específico para cada marcador
+    final now = DateTime.now();
+    final lastUpdate = _lastMarkerUpdate[microId];
+    if (lastUpdate != null && now.difference(lastUpdate) < _markerUpdateThrottle) {
+      return; // Skip si es muy reciente
+    }
+    
+    _lastMarkerUpdate[microId] = now;
+    
+    // Agrupar updates para procesar en batch
+    _queueMarkerUpdate(microId, locationData);
+  }
+  
+  void _queueMarkerUpdate(String microId, Map<String, dynamic> locationData) {
+    // Almacenar el update más reciente para cada micro
+    _pendingUpdates[microId] = locationData;
+    
+    // Procesar updates en batch cada 500ms
+    _mapUpdateTimer?.cancel();
+    _mapUpdateTimer = Timer(const Duration(milliseconds: 500), () {
+      _processPendingMarkerUpdates();
+    });
+  }
+  
+  Future<void> _processPendingMarkerUpdates() async {
+    if (!_mounted || _isUpdatingMarkers || _currentController == null || _pendingUpdates.isEmpty) {
+      return;
+    }
+    
+    _isUpdatingMarkers = true;
+    
     try {
-      if (!_mounted) return;
+      // Procesar todos los updates pendientes en un solo batch
+      final updates = Map<String, Map<String, dynamic>>.from(_pendingUpdates);
+      _pendingUpdates.clear();
       
-      final microId = locationData['microId']?.toString();
-      final location = locationData['location'];
-      
-      if (microId == null || location == null) {
-        print('⚠️ Datos de ubicación incompletos: microId=$microId, location=$location');
-        return;
+      for (final entry in updates.entries) {
+        await _updateSingleMarker(entry.key, entry.value);
       }
+      
+      // Log mínimal
+      if (updates.length > 1) {
+        print('📍 Batch actualizado: ${updates.length} marcadores');
+      }
+      
+    } catch (e) {
+      print('❌ Error en batch de marcadores: $e');
+    } finally {
+      _isUpdatingMarkers = false;
+    }
+  }
+  
+  Future<void> _updateSingleMarker(String microId, Map<String, dynamic> locationData) async {
+    try {
+      final location = locationData['location'];
+      if (location == null) return;
       
       final lat = location['latitud']?.toDouble();
       final lng = location['longitud']?.toDouble();
       
-      if (lat == null || lng == null) {
-        print('⚠️ Coordenadas inválidas: lat=$lat, lng=$lng');
-        return;
+      if (lat == null || lng == null) return;
+      
+      final placa = locationData['placa']?.toString() ?? 'Micro';
+      
+      // Si el marcador ya existe, solo actualizar posición
+      if (_microMarkers.containsKey(microId)) {
+        try {
+          await _currentController!.updateSymbol(
+            _microMarkers[microId]!,
+            SymbolOptions(
+              geometry: LatLng(lat, lng),
+              textField: placa,
+            ),
+          );
+          return;
+        } catch (e) {
+          // Si falla la actualización, recrear el marcador
+          print('⚠️ Fallo actualizando marcador $microId, recreando...');
+        }
       }
       
-      print('📍 Actualizando marcador en mapa: $microId -> ($lat, $lng)');
+      // Crear nuevo marcador solo si no existe o falló la actualización
+      await _createNewMarker(microId, lat, lng, placa);
       
-      // Crear el marcador del micro
+    } catch (e) {
+      print('❌ Error actualizando marcador $microId: $e');
+    }
+  }
+  
+  Future<void> _createNewMarker(String microId, double lat, double lng, String placa) async {
+    try {
+      // Remover marcador anterior si existe
+      if (_microMarkers.containsKey(microId)) {
+        try {
+          await _currentController!.removeSymbol(_microMarkers[microId]!);
+        } catch (e) {
+          // Ignorar errores de remoción
+        }
+      }
+      
+      // Crear nuevo marcador
       final microSymbol = Symbol(
         microId,
         SymbolOptions(
           geometry: LatLng(lat, lng),
           iconImage: 'bus-marker',
           iconSize: 0.8,
-          textField: 'Micro $microId',
+          textField: placa,
           textSize: 12,
           textColor: '#000000',
           textHaloColor: '#FFFFFF',
@@ -494,28 +695,28 @@ class ClientTrackingService {
         ),
       );
       
-      // Remover marcador anterior si existe
-      if (_microMarkers.containsKey(microId)) {
-        await controller.removeSymbol(_microMarkers[microId]!);
-      }
-      
-      // Agregar nuevo marcador
-      final addedSymbol = await controller.addSymbol(microSymbol.options);
+      final addedSymbol = await _currentController!.addSymbol(microSymbol.options);
       _microMarkers[microId] = addedSymbol;
       
-      print('✅ Marcador actualizado en mapa para micro $microId');
-      
     } catch (e) {
-      print('❌ Error actualizando marcador: $e');
+      print('❌ Error creando marcador $microId: $e');
     }
   }
   
-  Future<void> clearAllMarkers(MapLibreMapController controller) async {
+  Future<void> clearAllMarkers(MapLibreMapController? controller) async {
     try {
+      final mapController = controller ?? _currentController;
+      if (mapController == null) return;
+      
       for (final symbol in _microMarkers.values) {
-        await controller.removeSymbol(symbol);
+        try {
+          await mapController.removeSymbol(symbol);
+        } catch (e) {
+          // Ignorar errores individuales de remoción
+        }
       }
       _microMarkers.clear();
+      _lastMarkerUpdate.clear();
       print('🧹 Todos los marcadores de micros removidos');
     } catch (e) {
       print('❌ Error limpiando marcadores: $e');

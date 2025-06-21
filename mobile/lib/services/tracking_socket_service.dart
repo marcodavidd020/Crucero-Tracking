@@ -397,7 +397,8 @@ class TrackingSocketService{
         'altura': position.altitude,
         'precision': position.accuracy,
         'bateria': 100.0,
-        'imei': 'flutter-device-$_microId',
+        // 'imei': 'flutter-device-$_microId',
+        'imei': 'flutter-device',
         'fuente': 'app_flutter_driver',
       };
 

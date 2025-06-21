@@ -12,11 +12,13 @@ class SocketService {
   final WidgetRef ref;
   TrackingSocketService? _trackingService;
   bool _mounted = true;
+  bool _isInitializing = false;  // Nuevo: Para evitar inicializaciones múltiples
 
   SocketService(this.ref);
 
   void dispose() {
     _mounted = false;
+    _isInitializing = false;
     _trackingService?.dispose();
   }
 
@@ -26,10 +28,24 @@ class SocketService {
     final user = ref.read(userProvider);
     if (user?.esMicrero != true) return;
     
-    _trackingService?.dispose();
-    _trackingService = TrackingSocketService();
+    // Evitar múltiples inicializaciones simultáneas
+    if (_isInitializing) {
+      print('⚠️ Socket ya se está inicializando, esperando...');
+      return;
+    }
+    
+    // Si ya está conectado, no reinicializar
+    if (_trackingService?.isConnected == true) {
+      print('✅ Socket ya está conectado, omitiendo inicialización');
+      return;
+    }
+    
+    _isInitializing = true;
     
     try {
+      _trackingService?.dispose();
+      _trackingService = TrackingSocketService();
+      
       await _trackingService!.initSocket(
         // 'http://54.82.231.172:3001',
         baseUrlSocket,
@@ -43,8 +59,11 @@ class SocketService {
       
       print('🔌 Socket de tracking inicializado');
       print('🔌 Socket background también inicializado');
+      
     } catch (e) {
       print('❌ Error al inicializar socket: $e');
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -62,7 +81,8 @@ class SocketService {
       'altura': position.altitude,
       'precision': position.accuracy,
       'bateria': 100.0,
-      'imei': 'flutter-device-${user.id}',
+      // 'imei': 'flutter-device-${user.id}',
+      'imei': 'flutter-device',
       'fuente': 'app_flutter_employee',
     };
 
