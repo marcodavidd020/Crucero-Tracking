@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cliente Flutter - Tracking</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; font-weight: bold; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .message { padding: 8px; margin: 5px 0; border-left: 4px solid #007bff; background: white; }
+        .messages { height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: white; }
+        .button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; }
+        .primary { background: #007bff; color: white; }
+        .success { background: #28a745; color: white; }
+        .danger { background: #dc3545; color: white; }
+        .info { background: #17a2b8; color: white; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .live-indicator { display: inline-block; width: 10px; height: 10px; background: #28a745; border-radius: 50%; margin-right: 5px; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Cliente Flutter - Tracking en Tiempo Real</h1>
+        
+        <div class="card">
+            <h2>Estado de Conexión</h2>
+            <div id="status" class="status disconnected">🔴 Desconectado</div>
+            <div id="liveStatus">🔴 Sin conexión en tiempo real</div>
+        </div>
+
+        <div class="card">
+            <h2>Controles</h2>
+            <button class="button primary" onclick="connectAsFlutterClient()">🔌 Conectar como Cliente Flutter</button>
+            <button class="button danger" onclick="disconnect()">🔌 Desconectar</button>
+            <button class="button info" onclick="clearAll()">🧹 Limpiar</button>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>📋 Mensajes de Debug</h2>
+                <div id="messages" class="messages"></div>
+            </div>
+            
+            <div class="card">
+                <h2>📍 Ubicaciones en Tiempo Real</h2>
+                <div id="liveLocations" class="messages">Esperando actualizaciones...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📦 Datos Iniciales (Históricos)</h2>
+            <div id="initialData">No hay datos iniciales</div>
+        </div>
+    </div>
+
+    <script>
+        // Credenciales del CLIENTE Pedro Toledo (micro ABC122)
+        const MICRO_ID = '1c7f5325-e0a8-447e-88b7-b2b4ceaf27a4';  // Micro ABC122
+        const RUTA_ID = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d';     // Ruta B (misma ruta)
+        const AUTH_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJmYTIzOTkwNS1iN2QxLTQxYWQtODYyNC1lYjZhYzU5YTY5ODkiLCJpYXQiOjE3NTA0NjU3ODYsImV4cCI6MTc1MTMyOTc4Nn0.72-6UwQA33c7PZx4VF60nemyn2RbPNrRxcp7LBMfETs';
+        
+        let socket = null;
+        const status = document.getElementById('status');
+        const liveStatus = document.getElementById('liveStatus');
+        const messages = document.getElementById('messages');
+        const initialData = document.getElementById('initialData');
+        const liveLocations = document.getElementById('liveLocations');
+
+        function connectAsFlutterClient() {
+            if (socket) {
+                socket.disconnect();
+            }
+
+            addMessage('🚀 Simulando conexión de cliente Flutter...', 'info');
+            addMessage('🔑 Usando credenciales del CLIENTE Pedro Toledo', 'info');
+            addMessage('🚌 Micro ABC122 (diferente al chofer)', 'success');
+            addMessage('📱 Modo: SOLO ESCUCHA (como cliente Flutter)', 'info');
+
+            // Simular exactamente lo que hace el cliente Flutter
+            const trackingUrl = 'http://54.82.231.172:3001/tracking';
+            
+            addMessage('📡 URL: ' + trackingUrl, 'info');
+            addMessage('🚌 MicroId: ' + MICRO_ID + ' (ABC122)', 'info');
+            addMessage('🔑 Token: ' + AUTH_TOKEN.substring(0, 20) + '...', 'info');
+            addMessage('🛣️ Ruta: ' + RUTA_ID + ' (Ruta B)', 'info');
+
+            socket = io(trackingUrl, {
+                transports: ['websocket', 'polling'],
+                autoConnect: true,
+                timeout: 30000,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 2000,
+                reconnectionDelayMax: 10000,
+                auth: {
+                    microId: MICRO_ID,
+                    token: AUTH_TOKEN
+                }
+            });
+
+            socket.on('connect', () => {
+                status.textContent = '🟢 Conectado - Socket ID: ' + socket.id;
+                status.className = 'status connected';
+                liveStatus.innerHTML = '<span class="live-indicator"></span>Conectado como Cliente Flutter (Pedro Toledo)';
+                
+                addMessage('✅ Cliente Flutter conectado exitosamente', 'success');
+                addMessage('🔗 Socket ID: ' + socket.id, 'success');
+                addMessage('🔗 Namespace: ' + socket.nsp, 'success');
+                addMessage('🔗 Connected: ' + socket.connected, 'success');
+                addMessage('👤 Usuario: Pedro Toledo (CLIENTE)', 'success');
+                addMessage('🚌 Micro: ABC122 (' + MICRO_ID + ')', 'success');
+                
+                // Simular lo que hace el cliente Flutter: unirse a la ruta
+                addMessage('🛣️ Enviando joinRoute para Ruta B: ' + RUTA_ID, 'info');
+                socket.emit('joinRoute', RUTA_ID);
+            });
+
+            socket.on('disconnect', (reason) => {
+                status.textContent = '🔴 Desconectado: ' + reason;
+                status.className = 'status disconnected';
+                liveStatus.textContent = '🔴 Sin conexión en tiempo real';
+                addMessage('❌ Cliente Flutter desconectado: ' + reason, 'error');
+                
+                // Análisis específico del motivo de desconexión
+                if (reason === 'io server disconnect') {
+                    addMessage('🚨 CRÍTICO: El servidor cerró la conexión deliberadamente', 'error');
+                    addMessage('🚨 Posibles causas: validación fallida, microId duplicado, timeout', 'error');
+                } else if (reason === 'transport close') {
+                    addMessage('🚨 Conexión cerrada por transporte (red/proxy)', 'error');
+                } else if (reason === 'ping timeout') {
+                    addMessage('🚨 Timeout de ping - servidor no responde', 'error');
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                status.textContent = '🔴 Error de conexión: ' + error.message;
+                status.className = 'status disconnected';
+                addMessage('🚨 Error de conexión: ' + error.message, 'error');
+                
+                if (error.description) {
+                    addMessage('🔍 Descripción: ' + error.description, 'error');
+                }
+                if (error.context) {
+                    addMessage('🔍 Contexto: ' + JSON.stringify(error.context), 'error');
+                }
+            });
+
+            // === EVENTOS DE TRACKING (como cliente Flutter) ===
+            socket.on('initialTrackingData', (data) => {
+                addMessage('📦 ⭐ RECIBIDO initialTrackingData (HISTÓRICO)', 'info');
+                addMessage('📦 ⭐ Cantidad de micros: ' + data.length, 'info');
+                addMessage('📦 ⭐ Timestamp del evento: ' + Date.now(), 'info');
+                
+                if (data.length > 0) {
+                    // Buscar CUALQUIER micro en la misma ruta
+                    const routeMicros = data.filter(item => item.micro && item.micro.id_ruta === RUTA_ID);
+                    addMessage('🛣️ ⭐ Micros en Ruta B encontrados: ' + routeMicros.length, 'info');
+                    
+                    routeMicros.forEach((micro, index) => {
+                        addMessage('🚌 ⭐ Micro ' + (index + 1) + ': ' + micro.micro.placa + ' (' + micro.id_micro + ')', 'info');
+                        addMessage('📍 ⭐ Coordenadas: (' + micro.latitud + ', ' + micro.longitud + ')', 'coordinate');
+                        addMessage('⏰ ⭐ Última actualización: ' + new Date(micro.updatedAt).toLocaleString(), 'info');
+                        
+                        // Calcular antigüedad de los datos
+                        const lastUpdate = new Date(micro.updatedAt).getTime();
+                        const now = Date.now();
+                        const ageInSeconds = (now - lastUpdate) / 1000;
+                        
+                        addMessage('⏰ ⭐ Antigüedad: ' + ageInSeconds.toFixed(1) + ' segundos', 'info');
+                        
+                        if (ageInSeconds > 60) {
+                            addMessage('🚨 ⚠️ ALERTA: Datos muy antiguos - probablemente estáticos', 'error');
+                        }
+                    });
+                }
+                
+                displayInitialData(data);
+            });
+
+            // Evento específico de ruta (lo que el cliente Flutter necesita)
+            socket.on('routeLocationUpdate', (data) => {
+                addMessage('🎉 ⭐ RECIBIDO routeLocationUpdate (TIEMPO REAL)', 'route');
+                addMessage('🎉 ⭐ Micro: ' + (data.micro?.placa || 'N/A') + ' (' + data.id_micro + ')', 'route');
+                addMessage('🎉 ⭐ Coordenadas: (' + data.latitud + ', ' + data.longitud + ')', 'coordinate');
+                addMessage('🎉 ⭐ Batería: ' + data.bateria + '%', 'route');
+                addMessage('🎉 ⭐ Fuente: ' + data.fuente, 'route');
+                addMessage('🎉 ⭐ Timestamp del evento: ' + Date.now(), 'route');
+                
+                // Verificar si es de la misma ruta
+                if (data.micro && data.micro.id_ruta === RUTA_ID) {
+                    addMessage('✅ ⭐ CONFIRMADO: Actualización de la RUTA B', 'success');
+                    updateLiveLocation(data, 'route');
+                } else {
+                    addMessage('ℹ️ ⭐ Actualización de otra ruta', 'info');
+                }
+            });
+
+            // Evento general (backup)
+            socket.on('locationUpdate', (data) => {
+                addMessage('🌍 ⭐ RECIBIDO locationUpdate (GENERAL)', 'update');
+                addMessage('🌍 ⭐ Micro: ' + (data.micro?.placa || 'N/A') + ' (' + data.id_micro + ')', 'update');
+                addMessage('🌍 ⭐ Coordenadas: (' + data.latitud + ', ' + data.longitud + ')', 'coordinate');
+                
+                // Verificar si es de la misma ruta
+                if (data.micro && data.micro.id_ruta === RUTA_ID) {
+                    addMessage('✅ ⭐ CONFIRMADO: Actualización de la RUTA B (general)', 'success');
+                    updateLiveLocation(data, 'general');
+                } else {
+                    addMessage('ℹ️ ⭐ Actualización de otra ruta (general)', 'info');
+                }
+            });
+
+            // Monitoreo de conexión cada 10 segundos (como Flutter)
+            setInterval(() => {
+                if (socket && socket.connected) {
+                    addMessage('💓 HEARTBEAT: Cliente Flutter conectado - ' + new Date().toLocaleTimeString(), 'info');
+                } else {
+                    addMessage('💔 HEARTBEAT: Cliente Flutter DESCONECTADO - ' + new Date().toLocaleTimeString(), 'error');
+                }
+            }, 10000);
+        }
+
+        function displayInitialData(data) {
+            let html = '';
+            data.forEach(item => {
+                const isTargetRoute = item.micro && item.micro.id_ruta === RUTA_ID;
+                const lastUpdate = new Date(item.updatedAt);
+                const ageInSeconds = (Date.now() - lastUpdate.getTime()) / 1000;
+                
+                html += `
+                    <div class="micro-card" style="${isTargetRoute ? 'border: 2px solid #28a745; background-color: #f8fff9;' : 'border: 1px solid #ddd; margin: 10px 0; padding: 10px;'}">
+                        <strong>${item.micro.placa}</strong> ${isTargetRoute ? '(🎯 RUTA B - MONITOREADO)' : ''}
+                        <br><small>ID: ${item.id_micro}</small>
+                        <br><small>Ruta: ${item.micro.id_ruta}</small>
+                        <br><span class="coordinates">Lat: ${item.latitud}, Lng: ${item.longitud}</span>
+                        <br><span class="timestamp">Actualizado: ${lastUpdate.toLocaleString()}</span>
+                        <br><span style="color: ${ageInSeconds > 60 ? 'red' : 'green'}">Antigüedad: ${ageInSeconds.toFixed(1)}s</span>
+                        <br>Batería: ${item.bateria}% | Fuente: ${item.fuente}
+                    </div>
+                `;
+            });
+            initialData.innerHTML = html || 'No hay datos iniciales';
+        }
+
+        function updateLiveLocation(data, source) {
+            const timestamp = new Date().toLocaleTimeString();
+            const sourceLabel = source === 'route' ? '🛣️ RUTA' : '📍 GENERAL';
+            
+            liveLocations.innerHTML = `
+                <div class="location-item" style="border: 1px solid #28a745; padding: 10px; margin: 5px 0; background: #f8fff9;">
+                    <div><strong>${sourceLabel} - ${data.micro?.placa || 'N/A'}</strong></div>
+                    <div class="coordinates">Lat: ${data.latitud}, Lng: ${data.longitud}</div>
+                    <div>Batería: ${data.bateria}% | Altura: ${data.altura}m | Precisión: ${data.precision}m</div>
+                    <div>Fuente: ${data.fuente} | IMEI: ${data.imei}</div>
+                    <div class="timestamp">⏰ Recibido: ${timestamp}</div>
+                </div>
+            ` + liveLocations.innerHTML;
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        function clearAll() {
+            messages.innerHTML = '';
+            initialData.innerHTML = 'No hay datos iniciales';
+            liveLocations.innerHTML = 'Esperando actualizaciones...';
+        }
+
+        function addMessage(text, type = 'default') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = '<strong>' + new Date().toLocaleTimeString() + '</strong> - ' + text;
+            
+            if (type === 'error') div.style.borderLeftColor = '#dc3545';
+            if (type === 'success') div.style.borderLeftColor = '#28a745';
+            if (type === 'update') div.style.borderLeftColor = '#ffc107';
+            if (type === 'route') div.style.borderLeftColor = '#17a2b8';
+            if (type === 'coordinate') div.style.borderLeftColor = '#6f42c1';
+            if (type === 'info') div.style.borderLeftColor = '#6c757d';
+            
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Mantener solo los últimos 50 mensajes
+            while (messages.children.length > 50) {
+                messages.removeChild(messages.firstChild);
+            }
+        }
+
+        // Auto-inicializar
+        window.onload = function() {
+            addMessage('🧪 Test Cliente Flutter inicializado', 'info');
+            addMessage('🎯 Objetivo: Simular exactamente el comportamiento del cliente Flutter', 'info');
+            addMessage('📱 Modo: SOLO ESCUCHA (no envía ubicaciones)', 'info');
+            addMessage('🔑 Usando credenciales del CLIENTE Pedro Toledo', 'success');
+            addMessage('🚌 Micro ABC122 (diferente al chofer)', 'success');
+            addMessage('🛣️ Monitoreando Ruta B en tiempo real', 'info');
+        };
+    </script>
+</body>
+</html> 

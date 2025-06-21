@@ -1,5 +1,4 @@
 import 'package:app_map_tracking/common/app_cycle_observer.dart';
-import 'package:app_map_tracking/services/location_background_service.dart';
 import 'package:flutter/material.dart';
 import 'config/routes.dart';
 import 'package:flutter/services.dart';

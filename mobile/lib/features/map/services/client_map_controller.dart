@@ -6,18 +6,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import '../providers/map_state_provider.dart';
+import '../../../data/repositories_impl/entidad_repository_impl.dart';
+import '../../../data/repositories_impl/ruta_repository_impl.dart';
+import '../../../domain/repositories/providers/entidad_repository_provider.dart';
+import '../../../domain/repositories/providers/ruta_repository_provider.dart';
+import '../../providers/entidad_provider.dart';
+import '../../providers/ruta_provider.dart';
+import '../../providers/connectivity_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class ClientMapController {
   final WidgetRef ref;
   final Completer<MapLibreMapController> mapController = Completer();
+  bool _mounted = true;
   
+  // NUEVO: Sistema offline-first para clientes
+  Timer? _syncTimer;
+  bool _hasInitializedOfflineData = false;
+
   bool get isCompleted => mapController.isCompleted;
   Future<MapLibreMapController> get future => mapController.future;
   
   Line? _routeLine;
   bool canInteractWithMap = false;
 
-  ClientMapController(this.ref);
+  ClientMapController(this.ref) {
+    _initializeOfflineFirstSystem();
+  }
 
   // ========== INITIALIZATION ==========
   
@@ -188,72 +203,21 @@ class ClientMapController {
   // ========== CLEANUP ==========
   
   // ========== MICRO TRACKING ==========
+  // DEPRECADO: Este método ahora se maneja directamente en ClientTrackingService
+  // Se mantiene por compatibilidad pero se redirige al nuevo sistema
   
   Future<void> updateMicroLocationOnMap(Map<String, dynamic> locationData) async {
-    if (!mapController.isCompleted) return;
-    
-    try {
-      final controller = await mapController.future;
-      
-      // El backend envía routeLocationUpdate con esta estructura:
-      // {routeId: ..., microId: ..., location: {...}, timestamp: ...}
-      final microId = locationData['microId'] ?? locationData['id_micro'];
-      final location = locationData['location'] ?? locationData;
-      
-      // Extraer coordenadas del objeto location o directamente del data
-      final lat = location['latitud']?.toDouble() ?? locationData['latitud']?.toDouble();
-      final lng = location['longitud']?.toDouble() ?? locationData['longitud']?.toDouble();
-      
-      if (lat == null || lng == null) {
-        print('⚠️ Datos de ubicación inválidos: $locationData');
-        return;
-      }
-      
-      print('🚌 Actualizando ubicación del micro $microId: $lat, $lng');
-      
-      // Remover marcador anterior si existe
-      await _removePreviousMarker(controller, microId);
-      
-      // Agregar nuevo marcador
-      await controller.addSymbol(SymbolOptions(
-        geometry: LatLng(lat, lng),
-        iconImage: 'bus-marker',
-        iconSize: 0.8,
-        textField: '🚌',
-        textSize: 20,
-        textColor: '#FFFFFF',
-        textHaloColor: '#FF0000',
-        textHaloWidth: 2,
-        textOffset: const Offset(0, -2),
-      ));
-      
-      print('✅ Marcador actualizado en el mapa');
-      
-    } catch (e) {
-      print('❌ Error actualizando marcador: $e');
-    }
-  }
-
-  Future<void> _removePreviousMarker(
-    MapLibreMapController controller, 
-    String microId
-  ) async {
-    try {
-      // Obtener todos los símbolos y remover los del micro específico
-      final symbols = await controller.symbols;
-      for (final symbol in symbols) {
-        if (symbol.options.textField?.contains('🚌') == true) {
-          await controller.removeSymbol(symbol);
-        }
-      }
-    } catch (e) {
-      print('⚠️ Error removiendo marcador anterior: $e');
-    }
+    print('⚠️ DEPRECADO: updateMicroLocationOnMap en ClientMapController');
+    print('📍 Use ClientTrackingService.updateMicroLocationOnMap en su lugar');
+    print('🔄 Datos recibidos: $locationData');
+    // Ya no procesamos aquí - todo se maneja en ClientTrackingService
   }
 
   // ========== CLEANUP ==========
   
   void dispose() {
+    _mounted = false;
+    _syncTimer?.cancel();
     print('🧹 Iniciando limpieza del ClientMapController');
     
     if (mapController.isCompleted) {
@@ -270,5 +234,122 @@ class ClientMapController {
     }
     
     print('✅ ClientMapController dispose completado');
+  }
+
+  // ========== SISTEMA OFFLINE-FIRST PARA CLIENTES ==========
+  
+  /// Inicializa el sistema offline-first específico para clientes
+  Future<void> _initializeOfflineFirstSystem() async {
+    print('🌐 === INICIALIZANDO SISTEMA OFFLINE-FIRST PARA CLIENTE ===');
+    
+    try {
+      // PASO 1: Verificar si hay datos offline disponibles
+      await _ensureOfflineDataAvailable();
+      
+      // PASO 2: Configurar sincronización automática cuando hay conexión
+      _setupAutoSync();
+      
+      // PASO 3: Monitorear cambios de conectividad
+      _monitorConnectivityForSync();
+      
+      print('✅ Sistema offline-first para cliente inicializado');
+      
+    } catch (e) {
+      print('❌ Error inicializando sistema offline-first: $e');
+    }
+  }
+
+  /// Asegura que hay datos offline disponibles para el cliente
+  Future<void> _ensureOfflineDataAvailable() async {
+    try {
+      final entidadRepo = await ref.read(entidadRepositoryProvider.future);
+      final rutaRepo = await ref.read(rutaRepositoryProvider.future);
+      
+      // Verificar si hay datos locales
+      final rutasLocales = await (rutaRepo as RutaRepositoryImpl).getAllRutas();
+      
+      if (rutasLocales.isEmpty) {
+        print('📱 No hay datos offline - inicializando datos de respaldo...');
+        
+        // Poblar datos de respaldo para que el cliente pueda funcionar offline
+        await (entidadRepo as EntidadRepositoryImpl).poblarDatosPrueba();
+        await (rutaRepo as RutaRepositoryImpl).poblarRutasPrueba();
+        
+        _hasInitializedOfflineData = true;
+        print('✅ Datos offline inicializados para uso del cliente');
+      } else {
+        print('💾 Datos offline encontrados: ${rutasLocales.length} rutas');
+      }
+      
+    } catch (e) {
+      print('⚠️ Error asegurando datos offline: $e');
+    }
+  }
+
+  /// Configura sincronización automática cada 30 segundos cuando hay conexión
+  void _setupAutoSync() {
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      final isOnline = ref.read(isOnlineProvider);
+      if (isOnline) {
+        await _syncDataFromServer();
+      }
+    });
+  }
+
+  /// Monitorea cambios de conectividad para sincronizar datos
+  void _monitorConnectivityForSync() {
+    ref.listen(isOnlineProvider, (previous, isOnline) async {
+      if (isOnline && (previous == false || previous == null)) {
+        // Se recuperó la conexión - sincronizar inmediatamente
+        print('🟢 Conexión recuperada - sincronizando datos para cliente...');
+        await _syncDataFromServer();
+      } else if (!isOnline) {
+        print('🔴 Conexión perdida - activando modo offline para cliente');
+        print('📱 El cliente seguirá funcionando con datos locales');
+      }
+    });
+  }
+
+  /// Sincroniza datos desde el servidor para uso offline del cliente
+  Future<void> _syncDataFromServer() async {
+    try {
+      print('🔄 Sincronizando datos para uso offline del cliente...');
+      
+      // Invalidar providers para forzar recarga desde API
+      ref.invalidate(entidadProvider);
+      ref.invalidate(searchRutasProvider);
+      
+      // Los repositorios automáticamente guardarán los datos en BD local
+      print('✅ Sincronización completada - datos actualizados para uso offline');
+      
+    } catch (e) {
+      print('⚠️ Error en sincronización: $e');
+    }
+  }
+
+  /// Método público para forzar sincronización manual
+  Future<void> forceSyncForClient() async {
+    final isOnline = ref.read(isOnlineProvider);
+    if (isOnline) {
+      await _syncDataFromServer();
+    } else {
+      print('❌ No hay conexión para sincronizar');
+    }
+  }
+
+  // ========== ESTADO OFFLINE PARA CLIENTES ==========
+  
+  /// Obtiene el estado actual del modo offline
+  bool get isOfflineMode => !ref.read(isOnlineProvider);
+  
+  /// Muestra información sobre el estado offline al cliente
+  void showOfflineStatus() {
+    final isOnline = ref.read(isOnlineProvider);
+    if (isOnline) {
+      print('🟢 CLIENTE: Online - datos sincronizados con servidor');
+    } else {
+      print('🔴 CLIENTE: Offline - usando datos locales guardados');
+      print('📱 Todas las rutas están disponibles offline');
+    }
   }
 } 

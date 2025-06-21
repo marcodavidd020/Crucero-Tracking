@@ -69,6 +69,26 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
           loginSuccess = true;
           print('✅ Login online exitoso');
           
+          // AGREGAR: Guardar el token JWT por separado
+          try {
+            String? authToken;
+            if (response.containsKey('token')) {
+              authToken = response['token'];
+            } else if (response.containsKey('data') && response['data'].containsKey('token')) {
+              authToken = response['data']['token'];
+            }
+            
+            if (authToken != null) {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('auth_token', authToken);
+              print('💾 Token JWT guardado exitosamente');
+            } else {
+              print('⚠️ No se encontró token en la respuesta del servidor');
+            }
+          } catch (e) {
+            print('⚠️ Error guardando token: $e');
+          }
+          
           // Guardar credenciales para login offline futuro
           await _saveCredentialsForOffline(email, password, user);
         }
@@ -87,6 +107,8 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       if (!loginSuccess || user == null) {
         throw Exception('Credenciales incorrectas');
       }
+
+
 
       // Actualizar estado de autenticación
       _ref.read(userProvider.notifier).state = user;
@@ -198,6 +220,17 @@ class AuthStateNotifier extends StateNotifier<AuthState> {
       return prefs.getBool('has_offline_credentials') ?? false;
     } catch (e) {
       return false;
+    }
+  }
+
+  // NUEVO: Obtener token JWT almacenado
+  static Future<String> getAuthToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('auth_token') ?? '';
+    } catch (e) {
+      print('⚠️ Error obteniendo token: $e');
+      return '';
     }
   }
 

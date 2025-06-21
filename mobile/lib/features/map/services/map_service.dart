@@ -10,6 +10,7 @@ import 'route_service.dart';
 import 'socket_service.dart';
 import '../../../services/location_background_service.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../providers/connectivity_provider.dart';
 
 class MapService {
   final WidgetRef ref;
@@ -53,29 +54,49 @@ class MapService {
         throw Exception('Permisos de ubicación denegados');
       }
       
-      // MEJORADO: Inicializar background service SOLO para empleados/micreros de manera segura
       final user = ref.read(userProvider);
+      final isOnline = ref.read(isOnlineProvider);
+      
+      // CORREGIDO: Diferentes comportamientos para cliente vs chofer
       if (user?.esMicrero == true && user?.microId != null) {
+        // CHOFERES: Intentar inicializar siempre, la conectividad real se verifica en el socket
+        print('🚌 Inicializando tracking para empleado (${user?.nombre})...');
+        print('🚌 MicroID: ${user?.microId}');
+        
+        if (!isOnline) {
+          print('⚠️ ADVERTENCIA: Verificación de conectividad falló, pero intentando de todos modos...');
+          print('🌐 Si el socket se conecta, significa que sí hay internet real');
+        }
+        
+        // Inicializar background service para empleados
         try {
-          print('🔄 Iniciando background service para empleado (${user?.nombre})...');
-          print('🚌 MicroID: ${user?.microId}');
+          print('🔄 Iniciando background service para empleado...');
           final success = await LocationBackgroundService.initializeSafely();
           if (success) {
             print('✅ Background service inicializado correctamente');
           } else {
-            print('⚠️ Background service no pudo inicializarse (GPS deshabilitado o sin permisos)');
-            print('💡 El tracking funcionará solo en primer plano');
+            print('⚠️ Background service no pudo inicializarse, pero continuando...');
           }
         } catch (e) {
           print('⚠️ Error inicializando background service: $e');
-          print('💡 Continuando sin background service - tracking solo en primer plano');
+          // No fallar aquí, continuar con el socket principal
         }
       } else {
-        print('👤 Usuario es cliente o sin microID - no se inicializa background service');
+        // CLIENTES: Pueden funcionar offline perfectamente
+        print('👤 Usuario cliente - modo offline-first habilitado');
+        if (isOnline) {
+          print('🟢 Cliente online - recibirá ubicaciones en tiempo real');
+        } else {
+          print('🔴 Cliente offline - usando datos locales (rutas disponibles)');
+        }
       }
       
-      // Inicializar servicios
-      await _socketService.initializeSocket();
+      // Inicializar servicios (diferentes comportamientos)
+      if (user?.esMicrero == true) {
+        // Solo choferes con conexión inicializan socket
+        await _socketService.initializeSocket();
+      }
+      
       await _locationService.startLocationTracking();
       
       print('✅ Servicio de tracking iniciado correctamente');
@@ -85,6 +106,7 @@ class MapService {
       if (_mounted) {
         ref.read(mapStateProvider.notifier).setServiceActive(false);
       }
+      rethrow; // Re-lanzar para que la UI pueda mostrar el error
     }
   }
 

@@ -17,99 +17,57 @@ class SocketManager {
     _currentToken = token;
 
     print('[SOCKET_BG] Inicializando socket background para micro: $microId');
-    print('[SOCKET_BG] URL: $url (usando namespace principal)');
+    
+    // CRÍTICO: Usar namespace /tracking según el backend desplegado
+    final trackingUrl = url.endsWith('/') ? '${url}tracking' : '$url/tracking';
+    print('[SOCKET_BG] ⭐ Conectando al namespace /tracking: $trackingUrl');
+    print('[SOCKET_BG] ⭐ Auth: microId=$microId, token presente=${token.isNotEmpty}');
 
-    // CRÍTICO: Usar namespace principal, no /tracking
-    _socket = IO.io(
-        url, // Sin /tracking
-        IO.OptionBuilder()
-        .setTransports(['websocket', 'polling']) // Permitir fallback
+    _socket?.disconnect();
+    
+    _socket = IO.io(trackingUrl, IO.OptionBuilder()
+        .setTransports(['websocket', 'polling'])
         .enableAutoConnect()
-        .setTimeout(30000) // Timeout más largo para background
+        .setTimeout(10000)
         .setAuth({
-          'microId': microId,
-          'token': token,
-          'type': 'driver_background'
-        }).build(),
+          'microId': microId,  // REQUERIDO por el backend
+          'token': token,      // REQUERIDO por el backend
+        })
+        .build()
     );
 
-    _socket!.onConnect((_) {
-      print('[SOCKET_BG] ✅ Conectado en background');
+    _socket?.onConnect((_) {
+      print('[SOCKET_BG] ✅ Socket background conectado');
+      print('[SOCKET_BG] ID: ${_socket?.id}');
     });
 
-    _socket!.onDisconnect((reason) {
-      print('[SOCKET_BG] ❌ Desconectado: $reason');
-      // Reintentar conexión automáticamente en background
-      _scheduleReconnect(url);
+    _socket?.onDisconnect((reason) {
+      print('[SOCKET_BG] ❌ Socket background desconectado: $reason');
     });
 
-    _socket!.onConnectError((data) {
-      print('[SOCKET_BG] ❌ Error de conexión: $data');
-      _scheduleReconnect(url);
-    });
-
-    _socket!.onError((data) {
-      print('[SOCKET_BG] ❌ Error: $data');
+    _socket?.onError((error) {
+      print('[SOCKET_BG] ❌ Error: $error');
     });
   }
 
-  static void _scheduleReconnect(String url) {
-    if (_currentMicroId == null || _currentToken == null) return;
-    
-    Future.delayed(const Duration(seconds: 10), () {
-      if (_socket == null || !_socket!.connected) {
-        print('[SOCKET_BG] 🔄 Reintentando conexión automática...');
-        _socket?.disconnect();
-        _socket = null;
-        initialize(url, _currentMicroId!, _currentToken!);
-      }
-    });
-  }
-
-  /// Emite un evento con datos - MEJORADO para incluir ruta
-  static Future<void> emit(String event, dynamic data) async {
-    if (_socket != null && _socket!.connected) {
-      // CRÍTICO: Agregar ruta activa a los datos de ubicación
-      if (event == 'updateLocation' && data is Map<String, dynamic>) {
-        await _addActiveRoute(data);
-      }
-      
-      _socket!.emit(event, data);
-      print('[SOCKET_BG] ✅ Evento enviado: $event');
-      if (event == 'updateLocation') {
-        print('[SOCKET_BG]   📍 Lat: ${data['latitud']}, Lng: ${data['longitud']}');
-        print('[SOCKET_BG]   🛣️ Ruta: ${data['id_ruta']}');
-      }
-    } else {
-      print('[SOCKET_BG] ⚠️ No conectado. No se puede emitir: $event');
+  /// Envía datos de ubicación
+  static void emitLocationUpdate(Map<String, dynamic> locationData) {
+    if (_socket == null || !_socket!.connected) {
+      print('[SOCKET_BG] ⚠️ Socket no conectado');
+      return;
     }
-  }
 
-  /// NUEVO: Agregar ruta activa a los datos de ubicación
-  static Future<void> _addActiveRoute(Map<String, dynamic> locationData) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final rutaActivaId = prefs.getString('ruta_activa_id');
-      
-      if (rutaActivaId != null && rutaActivaId.isNotEmpty) {
-        locationData['id_ruta'] = rutaActivaId;
-        print('[SOCKET_BG] 🛣️ Ruta activa encontrada: $rutaActivaId');
-      } else {
-        locationData['id_ruta'] = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d'; // Fallback
-        print('[SOCKET_BG] ⚠️ No hay ruta activa, usando fallback');
-      }
+      // Usar evento 'updateLocation' según el backend
+      _socket!.emit('updateLocation', locationData);
+      print('[SOCKET_BG] ✅ Evento enviado: updateLocation');
+      print('[SOCKET_BG] Datos: ${locationData['latitud']}, ${locationData['longitud']}');
     } catch (e) {
-      locationData['id_ruta'] = 'f206dc92-2a2f-4bcf-9a6e-799d6b83033d'; // Fallback
-      print('[SOCKET_BG] ❌ Error obteniendo ruta activa: $e');
+      print('[SOCKET_BG] ❌ Error enviando ubicación: $e');
     }
   }
 
-  /// Escucha un evento del servidor
-  static void on(String event, Function(dynamic) callback) {
-    _socket?.on(event, callback);
-  }
-
-  /// Desconecta el socket (si deseas apagarlo manualmente)
+  /// Cierra la conexión del socket
   static void disconnect() {
     print('[SOCKET_BG] 🔌 Desconectando socket background...');
     _socket?.disconnect();
@@ -118,8 +76,9 @@ class SocketManager {
     _currentToken = null;
   }
 
-  /// Verifica si está conectado
-  static bool isConnected() {
-    return _socket?.connected ?? false;
-  }
+  /// Getter para verificar el estado de conexión
+  static bool get isConnected => _socket?.connected ?? false;
+
+  /// Getter para obtener el microId actual
+  static String? get currentMicroId => _currentMicroId;
 }

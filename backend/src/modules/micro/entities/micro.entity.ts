@@ -1,6 +1,7 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { EntidadOperadora } from '../../entidad-operadora/entities/entidad-operadora.entity';
 import { Empleado } from '../../empleado/entities/empleado.entity';
+import { TrackingLocation } from '../../tracking/entities/tracking-location.entity';
 
 @Entity('micros')
 export class Micro {
@@ -9,6 +10,9 @@ export class Micro {
 
   @Column({ name: 'id_entidad', type: 'varchar', length: 50 })
   idEntidad: string;
+
+  @Column({ name: 'id_ruta', type: 'varchar', length: 50, nullable: true })
+  idRuta: string;
 
   @Column({ type: 'varchar', length: 20 })
   placa: string;
@@ -31,6 +35,9 @@ export class Micro {
   @Column({ type: 'boolean', default: true })
   activo: boolean;
 
+  @Column({ type: 'boolean', default: true })
+  estado: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
@@ -44,4 +51,7 @@ export class Micro {
 
   @OneToMany(() => Empleado, empleado => empleado.micro)
   empleados: Empleado[];
+
+  @OneToMany(() => TrackingLocation, tracking => tracking.micro)
+  trackingLocations: TrackingLocation[];
 } 

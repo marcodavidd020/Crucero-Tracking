@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { Ruta } from '../../ruta/entities/ruta.entity';
+import { Micro } from '../../micro/entities/micro.entity';
 
 @Entity('tracking_locations')
 @Index(['idMicro', 'createdAt'])
@@ -37,8 +38,15 @@ export class TrackingLocation {
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
   // Relaciones
   @ManyToOne(() => Ruta, ruta => ruta.trackingLocations, { nullable: true })
   @JoinColumn({ name: 'id_ruta' })
   ruta: Ruta;
+
+  @ManyToOne(() => Micro, micro => micro.trackingLocations)
+  @JoinColumn({ name: 'id_micro' })
+  micro: Micro;
 } 
