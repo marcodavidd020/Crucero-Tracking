@@ -1,0 +1,1 @@
+/mnt/Local/Todo/Matoneadas/Crucero Tracking/mobile/build/app/intermediates/cxx/Debug/5g459352/obj/arm64-v8a

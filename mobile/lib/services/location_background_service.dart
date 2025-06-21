@@ -260,7 +260,8 @@ class LocationBackgroundService {
         'altura': position.altitude,
         'precision': position.accuracy,
         'bateria': 100.0,
-        'imei': 'flutter-device-$userId',
+        // 'imei': 'flutter-device-$userId',
+        'imei': 'flutter-device',
         'fuente': 'app_flutter_background',
       };
 
